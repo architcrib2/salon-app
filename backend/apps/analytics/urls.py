@@ -15,6 +15,9 @@ from .views import (
     VIPRankingView,
     RebookingOpportunitiesView,
     SendRebookingNudgeView,
+    # Phase 4 — Staff & Inventory Intelligence
+    StaffIntelligenceView,
+    InventoryIntelligenceView,
 )
 
 urlpatterns = [
@@ -33,4 +36,7 @@ urlpatterns = [
     path('vip-ranking/', VIPRankingView.as_view(), name='analytics-vip-ranking'),
     path('rebooking-opportunities/', RebookingOpportunitiesView.as_view(), name='analytics-rebooking'),
     path('send-rebooking-nudge/', SendRebookingNudgeView.as_view(), name='analytics-send-nudge'),
+    # Phase 4 — Staff & Inventory Intelligence
+    path('staff-intelligence/', StaffIntelligenceView.as_view(), name='analytics-staff-intelligence'),
+    path('inventory-intelligence/', InventoryIntelligenceView.as_view(), name='analytics-inventory-intelligence'),
 ]

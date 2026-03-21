@@ -15,3 +15,6 @@ export const getNextVisitPredictions = () => axios.get('/api/analytics/next-visi
 export const getVIPRanking = () => axios.get('/api/analytics/vip-ranking/')
 export const getRebookingOpportunities = () => axios.get('/api/analytics/rebooking-opportunities/')
 export const sendRebookingNudge = (customerId) => axios.post('/api/analytics/send-rebooking-nudge/', { customer_id: customerId })
+// Phase 3 — Staff & Inventory Intelligence
+export const getStaffIntelligence = () => axios.get('/api/analytics/staff-intelligence/')
+export const getInventoryIntelligence = () => axios.get('/api/analytics/inventory-intelligence/')

@@ -29,6 +29,8 @@ const ENGAGEMENT_NAV = [
 
 const INTELLIGENCE_NAV = [
   { path: '/analytics/intelligence', label: 'Customer Intelligence', icon: '🧠', ownerOnly: true },
+  { path: '/staff-intelligence',     label: 'Staff Intelligence',    icon: '👤', ownerOnly: true },
+  { path: '/inventory-intelligence', label: 'Inventory Intelligence',icon: '📦', ownerOnly: true },
 ]
 
 export default function Sidebar({ isOpen, onClose }) {

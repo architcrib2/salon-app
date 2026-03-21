@@ -29,6 +29,8 @@ import BookingRequestsPage from './pages/Bookings/BookingRequestsPage'
 import CampaignsPage from './pages/Campaigns/CampaignsPage'
 // Phase 3 pages
 import IntelligencePage from './pages/Analytics/IntelligencePage'
+import StaffIntelligencePage from './pages/Analytics/StaffIntelligencePage'
+import InventoryIntelligencePage from './pages/Analytics/InventoryIntelligencePage'
 import WalkinBillingPage from './pages/Billing/WalkinBillingPage'
 // Public pages (no auth / no sidebar)
 import QueueDisplayPage from './pages/Waitlist/QueueDisplayPage'
@@ -75,6 +77,8 @@ export default function App() {
         <Route path="campaigns" element={<CampaignsPage />} />
         {/* Phase 3 — Intelligence + Walk-in */}
         <Route path="analytics/intelligence" element={<IntelligencePage />} />
+        <Route path="staff-intelligence" element={<StaffIntelligencePage />} />
+        <Route path="inventory-intelligence" element={<InventoryIntelligencePage />} />
         <Route path="billing/walkin" element={<WalkinBillingPage />} />
       </Route>
     </Routes>

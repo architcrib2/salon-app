@@ -477,3 +477,90 @@ class SendRebookingNudgeView(APIView):
             return Response({'success': True, 'message': f'Nudge sent to {customer.name}'})
         except Exception as e:
             return Response({'success': False, 'message': str(e)}, status=400)
+
+
+class StaffIntelligenceView(APIView):
+    """GET /api/analytics/staff-intelligence/
+    Returns 4 scorecard datasets: performance, trends, specializations, workload.
+    Covers all active non-owner staff.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            from .staff_algorithms import (
+                score_staff_performance,
+                analyze_staff_trends,
+                analyze_staff_specializations,
+                analyze_workload_distribution,
+            )
+            stylists = StaffMember.objects.filter(is_active_staff=True).exclude(role='owner')
+
+            performance     = score_staff_performance(stylists)
+            trends          = analyze_staff_trends(stylists)
+            specializations = analyze_staff_specializations(stylists)
+            workload        = analyze_workload_distribution(stylists)
+
+            summary = {
+                'total_staff': len(performance),
+                'star_performers':    sum(1 for p in performance if p['tier'] == 'star'),
+                'strong_performers':  sum(1 for p in performance if p['tier'] == 'strong'),
+                'developing':         sum(1 for p in performance if p['tier'] == 'developing'),
+                'avg_completion_rate': round(
+                    sum(p['completion_rate'] for p in performance) / max(len(performance), 1), 1
+                ),
+                'total_revenue': round(sum(p['total_revenue'] for p in performance), 2),
+            }
+
+            return Response({'success': True, 'data': {
+                'summary': summary,
+                'performance': performance,
+                'trends': trends,
+                'specializations': specializations,
+                'workload': workload,
+            }})
+        except Exception as e:
+            return Response({'success': False, 'message': str(e)}, status=500)
+
+
+class InventoryIntelligenceView(APIView):
+    """GET /api/analytics/inventory-intelligence/
+    Returns 4 scorecard datasets: stockout_risk, dead_stock, turnover, reorder.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            from apps.inventory.models import Product
+            from .inventory_algorithms import (
+                calculate_stockout_risk,
+                identify_dead_stock,
+                calculate_turnover_metrics,
+                generate_reorder_suggestions,
+            )
+            products = Product.objects.all()
+
+            stockout  = calculate_stockout_risk(products)
+            dead      = identify_dead_stock(products)
+            turnover  = calculate_turnover_metrics(products)
+            reorder   = generate_reorder_suggestions(products)
+
+            summary = {
+                'total_products': products.count(),
+                'critical_stockout':   sum(1 for s in stockout if s['risk_band'] == 'critical'),
+                'high_stockout':       sum(1 for s in stockout if s['risk_band'] == 'high'),
+                'dead_stock_items':    len(dead['dead_and_slow']),
+                'dead_capital':        dead['total_dead_capital'],
+                'items_to_reorder':    reorder['total_items_to_reorder'],
+                'reorder_cost':        reorder['total_reorder_cost'],
+            }
+
+            return Response({'success': True, 'data': {
+                'summary': summary,
+                'stockout_risk': stockout,
+                'dead_stock': dead,
+                'turnover': turnover,
+                'reorder': reorder,
+            }})
+        except Exception as e:
+            return Response({'success': False, 'message': str(e)}, status=500)
