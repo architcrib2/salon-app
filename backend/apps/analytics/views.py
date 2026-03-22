@@ -89,6 +89,7 @@ class TopServicesView(APIView):
                 qs = qs.filter(stylist_id=params['staff_id'])
             top = (
                 qs
+                .order_by()
                 .values('service__name')
                 .annotate(revenue=Sum('price'), count=Count('id'))
                 .order_by('-revenue')[:5]
@@ -279,12 +280,14 @@ class RevenueBreakdownView(APIView):
 
             by_method = list(
                 invoice_qs
+                .order_by()
                 .values('payment_method')
                 .annotate(total=Sum('total_amount'), count=Count('id'))
             )
 
             by_category = list(
                 item_qs
+                .order_by()
                 .values('service__category__name')
                 .annotate(revenue=Sum('price'), count=Count('id'))
                 .order_by('-revenue')
