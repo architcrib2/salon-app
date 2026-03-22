@@ -50,7 +50,7 @@ def _deduct_inventory_for_invoice(invoice, performed_by):
                 quantity_before=qty_before,
                 quantity_after=qty_after,
                 reference_invoice=invoice,
-                performed_by=item.stylist,
+                performed_by=item.stylist or performed_by,
                 notes=f'Auto-deducted for service: {item.service.name}{warning}',
             )
             # Update cached quantity
@@ -217,7 +217,8 @@ class InvoiceViewSet(ViewSet):
 
                 for item_data in items_data:
                     service = Service.objects.get(pk=item_data['service_id'])
-                    stylist = StaffMember.objects.get(pk=item_data['stylist_id'])
+                    stylist_id = item_data.get('stylist_id')
+                    stylist = StaffMember.objects.get(pk=stylist_id) if stylist_id else None
                     item_gst = (service.price * service.gst_rate / 100).quantize(Decimal('0.01'))
                     subtotal += service.price
                     gst_total += item_gst

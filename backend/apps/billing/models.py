@@ -73,7 +73,7 @@ class InvoiceItem(models.Model):
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
     service = models.ForeignKey(Service, on_delete=models.PROTECT)
-    stylist = models.ForeignKey(StaffMember, on_delete=models.PROTECT)
+    stylist = models.ForeignKey(StaffMember, on_delete=models.PROTECT, null=True, blank=True)
     # Snapshot of price at time of billing — important for historical accuracy
     price = models.DecimalField(max_digits=8, decimal_places=2)
     gst_rate = models.DecimalField(max_digits=4, decimal_places=2)

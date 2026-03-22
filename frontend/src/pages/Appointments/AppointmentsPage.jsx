@@ -49,7 +49,7 @@ export default function AppointmentsPage() {
   const [customers, setCustomers] = useState([])
   const [services, setServices] = useState([])
   const [form, setForm] = useState({
-    customer: '', stylist: '', service_ids: [], scheduled_at: '', notes: ''
+    customer: '', stylist: '', service_ids: [], scheduled_at: '', notes: '', duration_override: ''
   })
   const [saving, setSaving] = useState(false)
 
@@ -89,7 +89,7 @@ export default function AppointmentsPage() {
   const handleSlotClick = (stylistId, hour) => {
     const dt = format(currentDate, 'yyyy-MM-dd') + `T${String(hour).padStart(2, '0')}:00`
     setSelectedSlot({ stylist: stylistId, hour })
-    setForm({ customer: '', stylist: stylistId, service_ids: [], scheduled_at: dt, notes: '' })
+    setForm({ customer: '', stylist: stylistId, service_ids: [], scheduled_at: dt, notes: '', duration_override: '' })
     setShowCreateModal(true)
   }
 
@@ -107,9 +107,10 @@ export default function AppointmentsPage() {
     }
     setSaving(true)
     try {
-      // Calculate total duration from selected services
+      // Use manual override if set, otherwise sum selected service durations
       const selectedSvcs = services.filter(s => form.service_ids.includes(s.id))
-      const duration = selectedSvcs.reduce((sum, s) => sum + s.duration_minutes, 0)
+      const autoDuration = selectedSvcs.reduce((sum, s) => sum + s.duration_minutes, 0)
+      const duration = form.duration_override ? parseInt(form.duration_override, 10) : (autoDuration || 60)
       await createAppointment({ ...form, duration_minutes: duration })
       toast.success('Appointment booked!')
       setShowCreateModal(false)
@@ -325,13 +326,33 @@ export default function AppointmentsPage() {
                 </label>
               ))}
             </div>
-            {form.service_ids.length > 0 && (
-              <p className="text-xs text-gray-500 mt-1">
-                {form.service_ids.length} service{form.service_ids.length > 1 ? 's' : ''} selected ·
-                Est. {services.filter(s => form.service_ids.includes(s.id)).reduce((sum, s) => sum + s.duration_minutes, 0)} min ·
-                ₹{services.filter(s => form.service_ids.includes(s.id)).reduce((sum, s) => sum + Number(s.price), 0).toLocaleString('en-IN')}
-              </p>
-            )}
+            {form.service_ids.length > 0 && (() => {
+              const selSvcs = services.filter(s => form.service_ids.includes(s.id))
+              const autoDur = selSvcs.reduce((sum, s) => sum + s.duration_minutes, 0)
+              const totalPrice = selSvcs.reduce((sum, s) => sum + Number(s.price), 0)
+              return (
+                <div className="mt-2 space-y-2">
+                  <p className="text-xs text-gray-500">
+                    {selSvcs.length} service{selSvcs.length > 1 ? 's' : ''} selected ·
+                    Est. {autoDur} min ·
+                    ₹{totalPrice.toLocaleString('en-IN')}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-600 whitespace-nowrap">Duration (min)</label>
+                    <input
+                      type="number"
+                      min="5"
+                      step="5"
+                      placeholder={autoDur || 60}
+                      value={form.duration_override}
+                      onChange={e => setForm({ ...form, duration_override: e.target.value })}
+                      className="w-24 border border-gray-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
+                    <span className="text-xs text-gray-400">Leave blank to use service total ({autoDur} min)</span>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
 
           <div className="flex gap-3 pt-2">
