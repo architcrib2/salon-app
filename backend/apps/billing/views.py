@@ -308,26 +308,29 @@ class DailySummaryView(APIView):
 
     def get(self, request):
         try:
-            date_str = request.query_params.get('date', date.today().strftime('%Y-%m-%d'))
-            day = datetime.strptime(date_str, '%Y-%m-%d').date()
+            params = parse_filter_params(request)
+            invoices = Invoice.objects.all()
 
-            invoices = Invoice.objects.filter(created_at__date=day)
+            if 'start_date' in params or 'end_date' in params:
+                # Range mode — use start_date / end_date filter params
+                invoices = apply_date_filter(invoices, params, 'created_at')
+                label = 'range'
+            else:
+                # Single-day mode (legacy) — use ?date= param
+                date_str = request.query_params.get('date', date.today().strftime('%Y-%m-%d'))
+                day = datetime.strptime(date_str, '%Y-%m-%d').date()
+                invoices = invoices.filter(created_at__date=day)
+                label = date_str
 
-            # Apply staff_id filter: only count invoices that have items by that stylist
-            try:
-                params = parse_filter_params(request)
-                if 'staff_id' in params:
-                    invoices = invoices.filter(items__stylist_id=params['staff_id']).distinct()
-            except Exception:
-                pass
+            if 'staff_id' in params:
+                invoices = invoices.filter(items__stylist_id=params['staff_id']).distinct()
 
             # Aggregate totals by payment method
-            summary = invoices.values('payment_method').annotate(
+            summary = invoices.order_by().values('payment_method').annotate(
                 total=Sum('total_amount'),
                 count=Count('id'),
             )
 
-            # Overall totals
             totals = invoices.aggregate(
                 total_revenue=Sum('total_amount'),
                 total_invoices=Count('id'),
@@ -337,7 +340,7 @@ class DailySummaryView(APIView):
             return Response({
                 'success': True,
                 'data': {
-                    'date': date_str,
+                    'date': label,
                     'by_payment_method': list(summary),
                     'total_revenue': totals['total_revenue'] or 0,
                     'total_invoices': totals['total_invoices'] or 0,

@@ -8,7 +8,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { format } from 'date-fns'
 import { getDailySummary } from '../../api/billing'
-import { getAppointmentCalendar } from '../../api/appointments'
+import { getAppointmentCalendar, getAppointments } from '../../api/appointments'
 import { getProducts } from '../../api/inventory'
 import StatCard from '../../components/StatCard'
 import Badge from '../../components/Badge'
@@ -25,25 +25,26 @@ export default function DashboardPage() {
   })
 
   const [summary, setSummary] = useState(null)
-  const [appointments, setAppointments] = useState([])
+  const [appointments, setAppointments] = useState([])   // today's calendar (for timeline)
+  const [periodAppts, setPeriodAppts] = useState([])     // filter-period appointments (for stats)
   const [lowStock, setLowStock] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const params = toAPIParams()
-        // Build staff_id param for calendar if set
-        const calParams = new URLSearchParams()
-        if (filters.staff_id) calParams.set('staff_id', filters.staff_id)
+        const params = toAPIParams()  // URLSearchParams with start_date, end_date, staff_id
 
-        const [summaryRes, apptRes, invRes] = await Promise.all([
-          getDailySummary(today),
-          getAppointmentCalendar(today, calParams.toString() ? calParams : undefined),
+        const [summaryRes, todayCalRes, periodApptsRes, invRes] = await Promise.all([
+          getDailySummary(today, params),               // revenue summary for selected period
+          getAppointmentCalendar(today),                // today's calendar (always today for timeline)
+          getAppointments(Object.fromEntries(params)),  // appointments for selected period (for counts)
           getProducts({ low_stock: true }),
         ])
+
         setSummary(summaryRes.data.data)
-        setAppointments(apptRes.data.data || [])
+        setAppointments(todayCalRes.data.data || [])
+        setPeriodAppts(periodApptsRes.data.data || [])
         setLowStock(invRes.data.low_stock_count || 0)
       } catch (err) {
         toast.error('Failed to load dashboard data')
@@ -58,17 +59,14 @@ export default function DashboardPage() {
 
   const totalRevenue = summary?.total_revenue || 0
   const totalInvoices = summary?.total_invoices || 0
-  const pendingAppts = appointments.filter(a => a.status === 'scheduled').length
-  const completedToday = appointments.filter(a => a.status === 'completed').length
+  // Stats use period appointments (matches the selected date range)
+  const pendingAppts = periodAppts.filter(a => a.status === 'scheduled').length
+  const completedAppts = periodAppts.filter(a => a.status === 'completed').length
+  const uniqueCustomers = new Set(periodAppts.map(a => a.customer)).size
 
-  // Count new customers from today's appointments (rough proxy)
-  const newCustomers = appointments.filter(a => {
-    // Simple heuristic: if customer_name appears only once
-    return true
-  }).reduce((acc, a) => {
-    acc.add(a.customer)
-    return acc
-  }, new Set()).size
+  // Label helpers: show "Today" when default filter, otherwise "Period"
+  const isToday = !hasActiveFilters || filters.duration === 'today'
+  const periodLabel = isToday ? "Today's" : 'Period'
 
   return (
     <div className="space-y-6">
@@ -101,26 +99,26 @@ export default function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon="💰"
-          label="Today's Revenue"
+          label={`${periodLabel} Revenue`}
           value={`₹${Number(totalRevenue).toLocaleString('en-IN')}`}
           sub={`${totalInvoices} invoice${totalInvoices !== 1 ? 's' : ''}`}
         />
         <StatCard
           icon="📅"
           label="Appointments"
-          value={appointments.length}
-          sub={`${completedToday} completed`}
+          value={isToday ? appointments.length : periodAppts.length}
+          sub={`${completedAppts} completed`}
         />
         <StatCard
           icon="⏳"
           label="Pending"
           value={pendingAppts}
-          sub="scheduled today"
+          sub="scheduled"
         />
         <StatCard
           icon="👥"
-          label="Customers Today"
-          value={newCustomers}
+          label={`${periodLabel} Customers`}
+          value={uniqueCustomers}
           sub="unique visitors"
         />
       </div>
@@ -210,7 +208,7 @@ export default function DashboardPage() {
       {/* Revenue by payment method */}
       {summary?.by_payment_method?.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">Today's Revenue by Method</h2>
+          <h2 className="font-semibold text-gray-800 mb-4">{periodLabel} Revenue by Method</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {summary.by_payment_method.map(item => (
               <div key={item.payment_method} className="text-center p-3 bg-gray-50 rounded-xl">
