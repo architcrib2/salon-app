@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { getCampaigns, createCampaign, sendCampaign, previewSegment } from '../../api/campaigns'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -26,16 +27,21 @@ export default function CampaignsPage() {
   const [sending, setSending] = useState(null)
   const [confirmSend, setConfirmSend] = useState(null) // campaign
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
   const fetchCampaigns = async () => {
     setLoading(true)
     try {
-      const res = await getCampaigns()
+      const params = toAPIParams()
+      const res = await getCampaigns(params)
       setCampaigns(res.data.data || [])
     } catch { toast.error('Failed to load campaigns') }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchCampaigns() }, [])
+  useEffect(() => { fetchCampaigns() }, [apiParamsString])
 
   useEffect(() => {
     if (!form.target_segment) return
@@ -81,6 +87,16 @@ export default function CampaignsPage() {
           {showCreate ? '✕ Cancel' : '+ New Campaign'}
         </button>
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'status']}
+        statusOptions={['draft', 'sent']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Create form */}
       {showCreate && (

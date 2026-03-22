@@ -10,6 +10,7 @@ import Badge from '../../components/Badge'
 import Modal from '../../components/Modal'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import EmptyState from '../../components/EmptyState'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 export default function StaffPage() {
@@ -23,11 +24,16 @@ export default function StaffPage() {
     phone: '', role: 'stylist', commission_rate: 15, password: ''
   })
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
   const fetchStaff = async () => {
     try {
+      const params = toAPIParams()
       const [staffRes, perfRes] = await Promise.all([
         getStaff(),
-        getStaffPerformance().catch(() => ({ data: { data: [] } })),
+        getStaffPerformance(params).catch(() => ({ data: { data: [] } })),
       ])
       setStaff(staffRes.data.data || [])
       setPerformance(perfRes.data.data || [])
@@ -38,7 +44,7 @@ export default function StaffPage() {
     }
   }
 
-  useEffect(() => { fetchStaff() }, [])
+  useEffect(() => { fetchStaff() }, [apiParamsString])
 
   const getPerf = (staffId) => performance.find(p => p.stylist_id === staffId)
 
@@ -72,6 +78,15 @@ export default function StaffPage() {
           ➕ Add Staff Member
         </button>
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Staff cards */}
       {staff.length === 0 ? (
@@ -114,7 +129,7 @@ export default function StaffPage() {
                   )}
                 </div>
 
-                {/* This month's performance */}
+                {/* This period's performance */}
                 {perf && (
                   <div className="mt-4 pt-4 border-t border-gray-100 grid grid-cols-3 gap-2 text-center">
                     <div>

@@ -21,6 +21,7 @@ from .serializers import (
     InvoiceListSerializer,
 )
 from apps.appointments.models import Appointment
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -94,6 +95,19 @@ class InvoiceViewSet(ViewSet):
                 qs = qs.filter(created_at__date__lte=date_to)
             if payment_method:
                 qs = qs.filter(payment_method=payment_method)
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                qs = apply_date_filter(qs, params, 'created_at')
+                if 'customer_id' in params:
+                    qs = qs.filter(customer_id=params['customer_id'])
+                if 'payment_method' in params:
+                    qs = qs.filter(payment_method__in=params['payment_method'])
+                if 'staff_id' in params:
+                    qs = qs.filter(items__stylist_id=params['staff_id']).distinct()
+            except Exception:
+                pass
 
             serializer = InvoiceListSerializer(qs, many=True)
             return Response({'success': True, 'data': serializer.data, 'count': qs.count()})
@@ -297,6 +311,14 @@ class DailySummaryView(APIView):
             day = datetime.strptime(date_str, '%Y-%m-%d').date()
 
             invoices = Invoice.objects.filter(created_at__date=day)
+
+            # Apply staff_id filter: only count invoices that have items by that stylist
+            try:
+                params = parse_filter_params(request)
+                if 'staff_id' in params:
+                    invoices = invoices.filter(items__stylist_id=params['staff_id']).distinct()
+            except Exception:
+                pass
 
             # Aggregate totals by payment method
             summary = invoices.values('payment_method').annotate(

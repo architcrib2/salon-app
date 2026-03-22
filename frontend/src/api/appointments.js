@@ -7,7 +7,7 @@ import axios from 'axios'
 const BASE = '/api/appointments'
 
 export const getAppointments = (params = {}) => axios.get(`${BASE}/`, { params })
-export const getAppointmentCalendar = (date) => axios.get(`${BASE}/calendar/`, { params: { date } })
+export const getAppointmentCalendar = (date, params) => axios.get(`${BASE}/calendar/?date=${date}${params ? '&' + params.toString() : ''}`)
 export const getAvailability = (stylist_id, date) => axios.get(`${BASE}/availability/`, { params: { stylist_id, date } })
 export const createAppointment = (data) => axios.post(`${BASE}/`, data)
 export const updateAppointment = (id, data) => axios.patch(`${BASE}/${id}/`, data)

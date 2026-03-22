@@ -19,6 +19,7 @@ from .serializers import (
     AppointmentDetailSerializer,
     AppointmentListSerializer,
 )
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -50,6 +51,17 @@ class AppointmentViewSet(ModelViewSet):
             qs = qs.filter(stylist_id=stylist_id)
         if appt_status:
             qs = qs.filter(status=appt_status)
+
+        # Standard filter params (start_date/end_date/staff_id/status list)
+        try:
+            params = parse_filter_params(self.request)
+            qs = apply_date_filter(qs, params, 'scheduled_at')
+            if 'staff_id' in params:
+                qs = qs.filter(stylist_id=params['staff_id'])
+            if 'status' in params:
+                qs = qs.filter(status__in=params['status'])
+        except Exception:
+            pass
 
         return qs.order_by('scheduled_at')
 
@@ -122,6 +134,14 @@ class AppointmentViewSet(ModelViewSet):
             appts = Appointment.objects.filter(
                 scheduled_at__range=(start, end)
             ).select_related('customer', 'stylist').prefetch_related('services').order_by('scheduled_at')
+
+            # Apply staff_id filter if provided
+            try:
+                params = parse_filter_params(request)
+                if 'staff_id' in params:
+                    appts = appts.filter(stylist_id=params['staff_id'])
+            except Exception:
+                pass
 
             serializer = AppointmentListSerializer(appts, many=True)
             return Response({'success': True, 'data': serializer.data, 'date': date_str})

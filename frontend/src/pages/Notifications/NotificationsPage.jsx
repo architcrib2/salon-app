@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { getNotifications, resendNotification, getNotificationStats } from '../../api/notifications'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -22,21 +23,24 @@ const STATUS_COLORS = {
   failed: 'bg-red-100 text-red-700',
 }
 
-const FILTERS = ['all', 'pending', 'sent', 'failed']
-
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState([])
   const [stats, setStats] = useState(null)
-  const [filter, setFilter] = useState('all')
   const [loading, setLoading] = useState(true)
   const [resending, setResending] = useState(null)
+
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      const params = filter !== 'all' ? { status: filter } : {}
+      const params = toAPIParams()
+      // Add status filter if set
+      if (filters.status) params.set('status', filters.status)
       const [notifRes, statsRes] = await Promise.all([
-        getNotifications(params),
+        getNotifications(Object.fromEntries(params)),
         getNotificationStats(),
       ])
       setNotifications(notifRes.data.data || [])
@@ -48,7 +52,7 @@ export default function NotificationsPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [filter])
+  useEffect(() => { fetchData() }, [apiParamsString])
 
   const handleResend = async (id) => {
     setResending(id)
@@ -86,17 +90,15 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div className="flex gap-2 flex-wrap">
-        {FILTERS.map(f => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={`text-sm px-4 py-1.5 rounded-lg font-medium capitalize transition-colors ${
-              filter === f ? 'bg-accent text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}>
-            {f}
-          </button>
-        ))}
-      </div>
+      {/* Filter Bar — replaces old filter tabs */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'status']}
+        statusOptions={['pending', 'sent', 'failed']}
+        hasActive={hasActiveFilters}
+      />
 
       {loading ? <LoadingSpinner /> : (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

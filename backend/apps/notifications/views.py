@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from .models import WhatsAppNotification
 from .serializers import NotificationSerializer
 from .services import WhatsAppService
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class NotificationListView(APIView):
@@ -31,6 +32,17 @@ class NotificationListView(APIView):
                 qs = qs.filter(notification_type=type_filter)
             if date_filter:
                 qs = qs.filter(created_at__date=date_filter)
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                qs = apply_date_filter(qs, params, 'scheduled_at')
+                if 'status' in params:
+                    qs = qs.filter(status__in=params['status'])
+                if 'notification_type' in params:
+                    qs = qs.filter(notification_type=params['notification_type'])
+            except Exception:
+                pass
 
             serializer = NotificationSerializer(qs[:200], many=True)
             return Response({'success': True, 'data': serializer.data, 'count': qs.count()})

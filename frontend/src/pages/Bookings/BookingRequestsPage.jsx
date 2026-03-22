@@ -5,6 +5,7 @@
 import React, { useEffect, useState } from 'react'
 import { getBookingRequests, confirmBookingRequest, rejectBookingRequest } from '../../api/bookings'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -17,21 +18,26 @@ const STATUS_COLORS = {
 export default function BookingRequestsPage() {
   const [requests, setRequests] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filterStatus, setFilterStatus] = useState('pending')
   const [rejectModal, setRejectModal] = useState(null) // {id, name}
   const [rejectReason, setRejectReason] = useState('')
   const [processing, setProcessing] = useState(null)
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month'), status: 'pending' },
+  })
+
   const fetchData = async () => {
     setLoading(true)
     try {
-      const res = await getBookingRequests(filterStatus)
+      const params = toAPIParams()
+      if (filters.status) params.set('status', filters.status)
+      const res = await getBookingRequests(params)
       setRequests(res.data.data || [])
     } catch { toast.error('Failed to load booking requests') }
     finally { setLoading(false) }
   }
 
-  useEffect(() => { fetchData() }, [filterStatus])
+  useEffect(() => { fetchData() }, [apiParamsString])
 
   const handleConfirm = async (id) => {
     setProcessing(id)
@@ -57,34 +63,34 @@ export default function BookingRequestsPage() {
     finally { setProcessing(null) }
   }
 
+  const pendingCount = requests.filter(r => r.status === 'pending').length
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-800">Online Booking Requests</h1>
-        {requests.filter(r => r.status === 'pending').length > 0 && (
+        {pendingCount > 0 && (
           <span className="bg-accent text-white text-xs px-2.5 py-1 rounded-full font-medium">
-            {requests.filter(r => r.status === 'pending').length} pending
+            {pendingCount} pending
           </span>
         )}
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex gap-2">
-        {['pending', 'confirmed', 'rejected', 'all'].map(s => (
-          <button key={s} onClick={() => setFilterStatus(s)}
-            className={`text-sm px-4 py-1.5 rounded-lg font-medium capitalize transition-colors ${
-              filterStatus === s ? 'bg-accent text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}>
-            {s}
-          </button>
-        ))}
-      </div>
+      {/* Filter Bar — replaces old filter tabs */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'status', 'staff']}
+        statusOptions={['pending', 'confirmed', 'rejected']}
+        hasActive={hasActiveFilters}
+      />
 
       {loading ? <LoadingSpinner /> : (
         <div className="space-y-3">
           {requests.length === 0 ? (
             <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center text-gray-400 text-sm">
-              No {filterStatus !== 'all' ? filterStatus : ''} booking requests
+              No booking requests found
             </div>
           ) : requests.map(req => (
             <div key={req.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">

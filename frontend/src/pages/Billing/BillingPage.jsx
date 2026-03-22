@@ -8,6 +8,7 @@ import { getInvoices } from '../../api/billing'
 import Badge from '../../components/Badge'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import EmptyState from '../../components/EmptyState'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -15,16 +16,17 @@ export default function BillingPage() {
   const navigate = useNavigate()
   const [invoices, setInvoices] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filters, setFilters] = useState({ date_from: '', date_to: '', payment_method: '' })
 
-  const fetchInvoices = async (f = filters) => {
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+    storageKey: 'salon_filters_billing',
+  })
+
+  const fetchInvoices = async () => {
     setLoading(true)
     try {
-      const params = {}
-      if (f.date_from) params.date_from = f.date_from
-      if (f.date_to) params.date_to = f.date_to
-      if (f.payment_method) params.payment_method = f.payment_method
-      const res = await getInvoices(params)
+      const params = toAPIParams()
+      const res = await getInvoices(Object.fromEntries(params))
       setInvoices(res.data.data || [])
     } catch {
       toast.error('Failed to load invoices')
@@ -33,13 +35,7 @@ export default function BillingPage() {
     }
   }
 
-  useEffect(() => { fetchInvoices() }, [])
-
-  const handleFilter = (key, val) => {
-    const newFilters = { ...filters, [key]: val }
-    setFilters(newFilters)
-    fetchInvoices(newFilters)
-  }
+  useEffect(() => { fetchInvoices() }, [apiParamsString])
 
   const totalRevenue = invoices.reduce((sum, inv) => sum + Number(inv.total_amount), 0)
 
@@ -58,39 +54,14 @@ export default function BillingPage() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex flex-wrap gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input type="date" value={filters.date_from}
-            onChange={e => handleFilter('date_from', e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input type="date" value={filters.date_to}
-            onChange={e => handleFilter('date_to', e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Payment Method</label>
-          <select value={filters.payment_method}
-            onChange={e => handleFilter('payment_method', e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent">
-            <option value="">All methods</option>
-            <option value="cash">Cash</option>
-            <option value="upi">UPI</option>
-            <option value="card">Card</option>
-            <option value="mixed">Mixed</option>
-          </select>
-        </div>
-        <div className="flex items-end">
-          <button onClick={() => { setFilters({ date_from: '', date_to: '', payment_method: '' }); fetchInvoices({ date_from: '', date_to: '', payment_method: '' }) }}
-            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
-            Clear
-          </button>
-        </div>
-      </div>
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'staff', 'customer', 'payment_method']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Invoice list */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

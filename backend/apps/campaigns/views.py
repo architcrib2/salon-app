@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from .models import Campaign, CampaignRecipient
 from .serializers import CampaignSerializer, CampaignRecipientSerializer
 from .segments import get_segment_queryset, render_message
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class SegmentPreviewView(APIView):
@@ -34,6 +35,16 @@ class CampaignListView(APIView):
     def get(self, request):
         try:
             campaigns = Campaign.objects.all()
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                campaigns = apply_date_filter(campaigns, params, 'created_at')
+                if 'status' in params:
+                    campaigns = campaigns.filter(status__in=params['status'])
+            except Exception:
+                pass
+
             serializer = CampaignSerializer(campaigns, many=True)
             return Response({'success': True, 'data': serializer.data})
         except Exception as e:

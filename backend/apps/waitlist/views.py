@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 
 from .models import WaitlistEntry
 from .serializers import WaitlistEntrySerializer
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class WaitlistTodayView(APIView):
@@ -26,6 +27,16 @@ class WaitlistTodayView(APIView):
             entries = WaitlistEntry.objects.filter(
                 added_at__date=today
             ).prefetch_related('requested_services').select_related('customer', 'preferred_stylist').order_by('position', 'added_at')
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                entries = apply_date_filter(entries, params, 'added_at')
+                if 'status' in params:
+                    entries = entries.filter(status__in=params['status'])
+            except Exception:
+                pass
+
             serializer = WaitlistEntrySerializer(entries, many=True)
             return Response({'success': True, 'data': serializer.data})
         except Exception as e:

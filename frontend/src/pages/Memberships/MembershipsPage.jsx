@@ -4,10 +4,10 @@
  * Active tab: view active memberships with session progress bars.
  */
 import React, { useEffect, useState } from 'react'
-import { getMembershipPlans, createMembershipPlan, getExpiringSoon, purchaseMembership } from '../../api/memberships'
+import { getMembershipPlans, createMembershipPlan, getExpiringSoon, purchaseMembership, getAllMemberships } from '../../api/memberships'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
-import axios from 'axios'
 
 export default function MembershipsPage() {
   const [tab, setTab] = useState('plans')
@@ -21,17 +21,22 @@ export default function MembershipsPage() {
   const [purchaseForm, setPurchaseForm] = useState({ customer_id: '', plan_id: '', payment_method: 'cash', amount_paid: '' })
   const [saving, setSaving] = useState(false)
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
   const fetchData = async () => {
     setLoading(true)
     try {
+      const params = toAPIParams()
       const [plansRes, expiringRes, activeRes] = await Promise.all([
         getMembershipPlans(),
         getExpiringSoon(),
-        axios.get('/api/memberships/active/'),
+        getAllMemberships(params).catch(() => ({ data: { data: [] } })),
       ])
       setPlans(plansRes.data.data || [])
       setExpiringSoon(expiringRes.data.data || [])
-      setActiveMemberships(activeRes.data?.data || [])
+      setActiveMemberships(activeRes.data?.data || expiringRes.data?.data || [])
     } catch {
       // active endpoint may not exist; fallback to expiring + plans
       try {
@@ -45,7 +50,7 @@ export default function MembershipsPage() {
     }
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => { fetchData() }, [apiParamsString])
 
   const handleCreatePlan = async (e) => {
     e.preventDefault()
@@ -128,6 +133,16 @@ export default function MembershipsPage() {
 
       {tab === 'active' && (
         <div className="space-y-3">
+          {/* Filter Bar for active tab */}
+          <FilterBar
+            filters={filters}
+            onChange={setFilters}
+            onClear={clearFilters}
+            available={['duration', 'status']}
+            statusOptions={['active', 'expired', 'exhausted']}
+            hasActive={hasActiveFilters}
+          />
+
           {expiringSoon.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-700">
               ⚠️ {expiringSoon.length} membership(s) expiring within 7 days

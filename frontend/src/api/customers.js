@@ -1,8 +1,8 @@
 /** @file Customers API helpers. */
 import axios from 'axios'
-const BASE = '/api/customers'
-export const getCustomers = (search = '') => axios.get(`${BASE}/`, { params: search ? { search } : {} })
-export const getCustomer = (id) => axios.get(`${BASE}/${id}/`)
-export const createCustomer = (data) => axios.post(`${BASE}/`, data)
-export const updateCustomer = (id, data) => axios.patch(`${BASE}/${id}/`, data)
-export const getCustomerAppointments = (id) => axios.get(`${BASE}/${id}/appointments/`)
+const qs = (p) => { const s = p instanceof URLSearchParams ? p.toString() : new URLSearchParams(p || {}).toString(); return s ? `?${s}` : '' }
+export const getCustomers = (params) => axios.get(`/api/customers/${qs(params)}`)
+export const getCustomer = (id) => axios.get(`/api/customers/${id}/`)
+export const createCustomer = (data) => axios.post('/api/customers/', data)
+export const updateCustomer = (id, data) => axios.patch(`/api/customers/${id}/`, data)
+export const getCustomerAppointments = (id) => axios.get(`/api/customers/${id}/appointments/`)

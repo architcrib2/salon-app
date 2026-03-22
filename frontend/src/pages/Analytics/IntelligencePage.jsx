@@ -12,6 +12,7 @@ import {
   sendRebookingNudge,
 } from '../../api/analytics'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 const TABS = ['Churn Risk', 'Next Visits', 'VIP Ranking', 'Rebook Today']
@@ -366,15 +367,20 @@ export default function IntelligencePage() {
   const [rebookSummary, setRebookSummary] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
       try {
+        const params = toAPIParams()
         const [cRes, nRes, vRes, rRes] = await Promise.all([
-          getChurnRisk(),
-          getNextVisitPredictions(),
-          getVIPRanking(),
-          getRebookingOpportunities(),
+          getChurnRisk(params),
+          getNextVisitPredictions(params),
+          getVIPRanking(params),
+          getRebookingOpportunities(params),
         ])
         // Each response has data: { summary: {...}, customers: [...] }
         setChurn(cRes.data.data?.customers || [])
@@ -392,7 +398,7 @@ export default function IntelligencePage() {
       }
     }
     fetchAll()
-  }, [])
+  }, [apiParamsString])
 
   const counts = [churn.length, nextVisits.length, vip.length, rebook.length]
 
@@ -402,6 +408,15 @@ export default function IntelligencePage() {
         <h1 className="text-xl font-bold text-gray-800">Customer Intelligence</h1>
         <p className="text-sm text-gray-500 mt-0.5">Deterministic scoring — no ML, no black boxes</p>
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'staff']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-200">

@@ -13,11 +13,16 @@ import { getProducts } from '../../api/inventory'
 import StatCard from '../../components/StatCard'
 import Badge from '../../components/Badge'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
   const today = format(new Date(), 'yyyy-MM-dd')
+
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'today', ...durationToDates('today') },
+  })
 
   const [summary, setSummary] = useState(null)
   const [appointments, setAppointments] = useState([])
@@ -27,9 +32,14 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
+        const params = toAPIParams()
+        // Build staff_id param for calendar if set
+        const calParams = new URLSearchParams()
+        if (filters.staff_id) calParams.set('staff_id', filters.staff_id)
+
         const [summaryRes, apptRes, invRes] = await Promise.all([
           getDailySummary(today),
-          getAppointmentCalendar(today),
+          getAppointmentCalendar(today, calParams.toString() ? calParams : undefined),
           getProducts({ low_stock: true }),
         ])
         setSummary(summaryRes.data.data)
@@ -42,7 +52,7 @@ export default function DashboardPage() {
       }
     }
     fetchAll()
-  }, [today])
+  }, [today, apiParamsString])
 
   if (loading) return <LoadingSpinner message="Loading dashboard..." />
 
@@ -77,6 +87,15 @@ export default function DashboardPage() {
           <span className="text-red-500 text-sm font-medium">View →</span>
         </div>
       )}
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'staff']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

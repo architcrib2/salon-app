@@ -11,6 +11,7 @@ from rest_framework.views import APIView
 from .models import MembershipPlan, CustomerMembership, MembershipRedemption
 from .serializers import MembershipPlanSerializer, CustomerMembershipSerializer
 from .services import MembershipService
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class MembershipPlanView(APIView):
@@ -123,6 +124,16 @@ class ActiveMembershipsView(APIView):
             memberships = CustomerMembership.objects.filter(
                 status='active'
             ).select_related('customer', 'plan').order_by('valid_until')
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                memberships = apply_date_filter(memberships, params, 'purchased_at')
+                if 'status' in params:
+                    memberships = memberships.filter(status__in=params['status'])
+            except Exception:
+                pass
+
             serializer = CustomerMembershipSerializer(memberships, many=True)
             return Response({'success': True, 'data': serializer.data, 'count': memberships.count()})
         except Exception as e:

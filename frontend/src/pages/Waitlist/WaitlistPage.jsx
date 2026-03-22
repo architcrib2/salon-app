@@ -5,6 +5,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { getWaitlistToday, addToWaitlist, updateWaitlistStatus, removeFromWaitlist, getWaitlistStats } from '../../api/waitlist'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 const STATUS_COLORS = {
@@ -21,9 +22,14 @@ export default function WaitlistPage() {
   const [form, setForm] = useState({ walk_in_name: '', walk_in_phone: '', notes: '' })
   const [adding, setAdding] = useState(false)
 
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'today', ...durationToDates('today') },
+  })
+
   const fetchData = useCallback(async () => {
     try {
-      const [listRes, statsRes] = await Promise.all([getWaitlistToday(), getWaitlistStats()])
+      const params = toAPIParams()
+      const [listRes, statsRes] = await Promise.all([getWaitlistToday(params), getWaitlistStats()])
       setEntries(listRes.data.data || [])
       setStats(statsRes.data.data || null)
     } catch {
@@ -31,7 +37,7 @@ export default function WaitlistPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [apiParamsString])
 
   useEffect(() => {
     fetchData()
@@ -70,8 +76,14 @@ export default function WaitlistPage() {
     } catch { toast.error('Failed to remove') }
   }
 
-  const activeEntries = entries.filter(e => e.status === 'waiting' || e.status === 'in_progress')
-  const doneEntries = entries.filter(e => e.status === 'done' || e.status === 'cancelled')
+  // Client-side status filter
+  const activeStatuses = filters.status ? filters.status.split(',').filter(Boolean) : []
+  const filteredEntries = activeStatuses.length > 0
+    ? entries.filter(e => activeStatuses.includes(e.status))
+    : entries
+
+  const activeEntries = filteredEntries.filter(e => e.status === 'waiting' || e.status === 'in_progress')
+  const doneEntries = filteredEntries.filter(e => e.status === 'done' || e.status === 'cancelled')
 
   return (
     <div className="space-y-5">
@@ -129,6 +141,16 @@ export default function WaitlistPage() {
           </button>
         </form>
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'status']}
+        statusOptions={['waiting', 'in_progress', 'done', 'cancelled']}
+        hasActive={hasActiveFilters}
+      />
 
       {loading ? <LoadingSpinner /> : (
         <>

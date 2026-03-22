@@ -16,6 +16,7 @@ from apps.appointments.models import Appointment
 from apps.customers.models import Customer
 from apps.accounts.models import StaffMember
 from apps.services.models import Service
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class RevenueAnalyticsView(APIView):
@@ -30,18 +31,34 @@ class RevenueAnalyticsView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
             period = request.query_params.get('period', 'month')
-            days = 7 if period == 'week' else 30
             today = date.today()
 
+            # If start_date/end_date provided, use those (up to 90 days)
+            if 'start_date' in params and 'end_date' in params:
+                start_day = params['start_date']
+                end_day = params['end_date']
+                delta = (end_day - start_day).days
+                days_list = [start_day + timedelta(days=i) for i in range(min(delta + 1, 90))]
+            else:
+                days = 7 if period == 'week' else 30
+                days_list = [today - timedelta(days=i) for i in range(days - 1, -1, -1)]
+
             data = []
-            for i in range(days - 1, -1, -1):
-                day = today - timedelta(days=i)
+            for day in days_list:
                 invoices = Invoice.objects.filter(created_at__date=day)
+                appt_qs = Appointment.objects.filter(scheduled_at__date=day, status='completed')
+                if 'staff_id' in params:
+                    # Filter invoices that have items by this stylist
+                    invoice_ids = InvoiceItem.objects.filter(
+                        stylist_id=params['staff_id'],
+                        invoice__created_at__date=day,
+                    ).values_list('invoice_id', flat=True)
+                    invoices = invoices.filter(id__in=invoice_ids)
+                    appt_qs = appt_qs.filter(stylist_id=params['staff_id'])
                 revenue = invoices.aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
-                appt_count = Appointment.objects.filter(
-                    scheduled_at__date=day, status='completed'
-                ).count()
+                appt_count = appt_qs.count()
                 data.append({
                     'date': day.strftime('%d %b'),
                     'full_date': day.strftime('%Y-%m-%d'),
@@ -65,8 +82,13 @@ class TopServicesView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
+            qs = InvoiceItem.objects.all()
+            qs = apply_date_filter(qs, params, 'invoice__created_at')
+            if 'staff_id' in params:
+                qs = qs.filter(stylist_id=params['staff_id'])
             top = (
-                InvoiceItem.objects
+                qs
                 .values('service__name')
                 .annotate(revenue=Sum('price'), count=Count('id'))
                 .order_by('-revenue')[:5]
@@ -90,20 +112,30 @@ class StaffPerformanceView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
             today = date.today()
             month_start = today.replace(day=1)
 
+            # Use provided date range or fall back to current month
+            range_start = params.get('start_date', month_start)
+            range_end = params.get('end_date', today)
+
             stylists = StaffMember.objects.filter(role='stylist', is_active_staff=True)
+            if 'staff_id' in params:
+                stylists = stylists.filter(id=params['staff_id'])
+
             data = []
             for stylist in stylists:
                 appts = Appointment.objects.filter(
                     stylist=stylist,
-                    scheduled_at__date__gte=month_start,
+                    scheduled_at__date__gte=range_start,
+                    scheduled_at__date__lte=range_end,
                     status='completed',
                 )
                 revenue = InvoiceItem.objects.filter(
                     stylist=stylist,
-                    invoice__created_at__date__gte=month_start,
+                    invoice__created_at__date__gte=range_start,
+                    invoice__created_at__date__lte=range_end,
                 ).aggregate(total=Sum('price'))['total'] or Decimal('0')
 
                 # Commission = revenue * commission_rate / 100
@@ -135,22 +167,29 @@ class CustomerRetentionView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
             today = date.today()
-            days_30 = today - timedelta(days=30)
 
-            # Customers who visited in last 30 days
-            recent_customers = Customer.objects.filter(last_visit__gte=days_30)
+            # Use provided date range or fall back to last 30 days
+            range_start = params.get('start_date', today - timedelta(days=30))
+            range_end = params.get('end_date', today)
 
-            new_customers = recent_customers.filter(appointments__count=1) if False else \
-                Customer.objects.filter(created_at__date__gte=days_30).count()
+            # Customers who visited in the date range
+            recent_customers = Customer.objects.filter(last_visit__gte=range_start, last_visit__lte=range_end)
+
+            new_customers = Customer.objects.filter(
+                created_at__date__gte=range_start,
+                created_at__date__lte=range_end,
+            ).count()
             returning = recent_customers.annotate(
                 visit_count=Count('appointments')
             ).filter(visit_count__gt=1).count()
 
-            # Daily new customer trend for chart
+            # Daily new customer trend for chart (over the date range, up to 30 days)
+            delta = (range_end - range_start).days
             trend = []
-            for i in range(29, -1, -1):
-                day = today - timedelta(days=i)
+            for i in range(min(delta, 29), -1, -1):
+                day = range_end - timedelta(days=i)
                 new_on_day = Customer.objects.filter(created_at__date=day).count()
                 trend.append({'date': day.strftime('%d %b'), 'new': new_on_day})
 
@@ -177,11 +216,16 @@ class HeatmapView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
             today = date.today()
-            days_90 = today - timedelta(days=90)
+
+            # Use provided date range or fall back to last 90 days
+            range_start = params.get('start_date', today - timedelta(days=90))
+            range_end = params.get('end_date', today)
 
             appointments = Appointment.objects.filter(
-                scheduled_at__date__gte=days_90,
+                scheduled_at__date__gte=range_start,
+                scheduled_at__date__lte=range_end,
                 status__in=['completed', 'in_progress', 'scheduled'],
             )
 
@@ -213,27 +257,46 @@ class RevenueBreakdownView(APIView):
 
     def get(self, request):
         try:
+            params = parse_filter_params(request)
             today = date.today()
             month_start = today.replace(day=1)
 
+            # Use provided date range or fall back to current month
+            range_start = params.get('start_date', month_start)
+            range_end = params.get('end_date', today)
+
+            invoice_qs = Invoice.objects.filter(
+                created_at__date__gte=range_start,
+                created_at__date__lte=range_end,
+            )
+            item_qs = InvoiceItem.objects.filter(
+                invoice__created_at__date__gte=range_start,
+                invoice__created_at__date__lte=range_end,
+            )
+            if 'staff_id' in params:
+                invoice_qs = invoice_qs.filter(items__stylist_id=params['staff_id']).distinct()
+                item_qs = item_qs.filter(stylist_id=params['staff_id'])
+
             by_method = list(
-                Invoice.objects.filter(created_at__date__gte=month_start)
+                invoice_qs
                 .values('payment_method')
                 .annotate(total=Sum('total_amount'), count=Count('id'))
             )
 
             by_category = list(
-                InvoiceItem.objects.filter(invoice__created_at__date__gte=month_start)
+                item_qs
                 .values('service__category__name')
                 .annotate(revenue=Sum('price'), count=Count('id'))
                 .order_by('-revenue')
             )
 
+            stylist_filter = StaffMember.objects.filter(role='stylist', is_active_staff=True)
+            if 'staff_id' in params:
+                stylist_filter = stylist_filter.filter(id=params['staff_id'])
+
             by_stylist = []
-            for stylist in StaffMember.objects.filter(role='stylist', is_active_staff=True):
-                rev = InvoiceItem.objects.filter(
-                    stylist=stylist, invoice__created_at__date__gte=month_start
-                ).aggregate(total=Sum('price'))['total'] or Decimal('0')
+            for stylist in stylist_filter:
+                rev = item_qs.filter(stylist=stylist).aggregate(total=Sum('price'))['total'] or Decimal('0')
                 by_stylist.append({
                     'stylist_id': stylist.id,
                     'name': stylist.full_name,
@@ -267,7 +330,9 @@ class MembershipStatsView(APIView):
     def get(self, request):
         try:
             from apps.memberships.models import CustomerMembership, MembershipPlan
+            params = parse_filter_params(request)
             active = CustomerMembership.objects.filter(status='active')
+            active = apply_date_filter(active, params, 'purchased_at')
             total_revenue = active.aggregate(total=Sum('amount_paid'))['total'] or Decimal('0')
 
             by_plan = []
@@ -299,7 +364,10 @@ class ReferralAnalyticsView(APIView):
 
     def get(self, request):
         try:
-            total = Customer.objects.filter(referred_by__isnull=False).count()
+            params = parse_filter_params(request)
+            customer_qs = Customer.objects.filter(referred_by__isnull=False)
+            customer_qs = apply_date_filter(customer_qs, params, 'created_at')
+            total = customer_qs.count()
             total_points = Customer.objects.aggregate(
                 total=Sum('referral_points_earned')
             )['total'] or 0
@@ -330,7 +398,26 @@ class ChurnRiskView(APIView):
     def get(self, request):
         try:
             from .algorithms import calculate_churn_risk
-            all_results = calculate_churn_risk(Customer.objects.all())
+            params = parse_filter_params(request)
+            customers = Customer.objects.all()
+            if 'staff_id' in params:
+                appt_qs = Appointment.objects.filter(stylist_id=params['staff_id'], status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+            elif 'start_date' in params or 'end_date' in params:
+                appt_qs = Appointment.objects.filter(status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+
+            all_results = calculate_churn_risk(customers)
 
             summary = {
                 'healthy_count': sum(1 for r in all_results if r['risk_band'] == 'healthy'),
@@ -360,7 +447,26 @@ class NextVisitPredictionsView(APIView):
     def get(self, request):
         try:
             from .algorithms import predict_next_visit
-            all_results = predict_next_visit(Customer.objects.all())
+            params = parse_filter_params(request)
+            customers = Customer.objects.all()
+            if 'staff_id' in params:
+                appt_qs = Appointment.objects.filter(stylist_id=params['staff_id'], status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+            elif 'start_date' in params or 'end_date' in params:
+                appt_qs = Appointment.objects.filter(status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+
+            all_results = predict_next_visit(customers)
 
             summary = {
                 'upcoming_count': sum(1 for r in all_results if r['status'] == 'upcoming'),
@@ -389,7 +495,26 @@ class VIPRankingView(APIView):
     def get(self, request):
         try:
             from .algorithms import calculate_vip_score
-            all_results = calculate_vip_score(Customer.objects.all())
+            params = parse_filter_params(request)
+            customers = Customer.objects.all()
+            if 'staff_id' in params:
+                appt_qs = Appointment.objects.filter(stylist_id=params['staff_id'], status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+            elif 'start_date' in params or 'end_date' in params:
+                appt_qs = Appointment.objects.filter(status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+
+            all_results = calculate_vip_score(customers)
 
             platinum = [r for r in all_results if r['vip_tier'] == 'platinum']
             gold = [r for r in all_results if r['vip_tier'] == 'gold']
@@ -425,8 +550,27 @@ class RebookingOpportunitiesView(APIView):
     def get(self, request):
         try:
             from .algorithms import calculate_rebooking_opportunities
+            params = parse_filter_params(request)
+            customers = Customer.objects.all()
+            if 'staff_id' in params:
+                appt_qs = Appointment.objects.filter(stylist_id=params['staff_id'], status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+            elif 'start_date' in params or 'end_date' in params:
+                appt_qs = Appointment.objects.filter(status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                customers = customers.filter(id__in=customer_ids)
+
             limit = int(request.query_params.get('limit', 20))
-            all_results = calculate_rebooking_opportunities(Customer.objects.all())
+            all_results = calculate_rebooking_opportunities(customers)
 
             top = all_results[:limit]
             potential_revenue = sum(r['avg_spend_per_visit'] for r in top)

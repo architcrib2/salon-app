@@ -8,9 +8,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts'
-import { getRevenue, getTopServices, getStaffPerformance, getCustomerRetention } from '../../api/analytics'
-import axios from 'axios'
+import { getRevenue, getTopServices, getStaffPerformance, getCustomerRetention, getHeatmap, getRevenueBreakdown, getMembershipStats, getReferralStats } from '../../api/analytics'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 const ACCENT = '#e94560'
@@ -20,7 +20,10 @@ const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const HOURS = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
 
 export default function AnalyticsPage() {
-  const [period, setPeriod] = useState('month')
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
   const [revenue, setRevenue] = useState([])
   const [topServices, setTopServices] = useState([])
   const [staffData, setStaffData] = useState([])
@@ -35,19 +38,26 @@ export default function AnalyticsPage() {
     const fetchAll = async () => {
       setLoading(true)
       try {
+        const params = toAPIParams()
         const [revRes, svcRes, staffRes, retRes, heatRes, breakRes, memRes, refRes] = await Promise.all([
-          getRevenue(period),
-          getTopServices(),
-          getStaffPerformance(),
-          getCustomerRetention(),
-          axios.get('/api/analytics/heatmap/'),
-          axios.get('/api/analytics/revenue-breakdown/'),
-          axios.get('/api/analytics/membership-stats/'),
-          axios.get('/api/analytics/referral-stats/'),
+          getRevenue('month', params),
+          getTopServices(params),
+          getStaffPerformance(params),
+          getCustomerRetention(params),
+          getHeatmap(params),
+          getRevenueBreakdown(params),
+          getMembershipStats(params),
+          getReferralStats(params),
         ])
         setRevenue(revRes.data.data || [])
         setTopServices(svcRes.data.data || [])
-        setStaffData(staffRes.data.data || [])
+        // If staff filter is active, filter staff data client-side too
+        const allStaff = staffRes.data.data || []
+        if (filters.staff_id) {
+          setStaffData(allStaff.filter(s => String(s.stylist_id) === String(filters.staff_id)))
+        } else {
+          setStaffData(allStaff)
+        }
         setRetention(retRes.data.data || null)
         setHeatmap(heatRes.data.data || [])
         setBreakdown(breakRes.data.data || null)
@@ -60,7 +70,7 @@ export default function AnalyticsPage() {
       }
     }
     fetchAll()
-  }, [period])
+  }, [apiParamsString])
 
   const totalRevenue = revenue.reduce((s, d) => s + d.revenue, 0)
   const totalAppts = revenue.reduce((s, d) => s + d.appointments, 0)
@@ -83,10 +93,19 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'year', 'month', 'staff']}
+        hasActive={hasActiveFilters}
+      />
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <p className="text-xs text-gray-500 font-medium">Revenue ({period === 'week' ? '7d' : '30d'})</p>
+          <p className="text-xs text-gray-500 font-medium">Revenue ({filters.duration || 'this_month'})</p>
           <p className="text-2xl font-bold text-gray-800 mt-1">₹{totalRevenue.toLocaleString('en-IN')}</p>
         </div>
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -107,16 +126,6 @@ export default function AnalyticsPage() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-gray-800">Revenue Trend</h2>
-          <div className="flex gap-2">
-            {['week', 'month'].map(p => (
-              <button key={p} onClick={() => setPeriod(p)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-                  period === p ? 'bg-accent text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}>
-                {p === 'week' ? 'Last 7 Days' : 'Last 30 Days'}
-              </button>
-            ))}
-          </div>
         </div>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={revenue} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -174,7 +183,7 @@ export default function AnalyticsPage() {
         {/* Revenue by payment method */}
         {breakdown && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">Revenue by Payment Method (This Month)</h2>
+            <h2 className="font-semibold text-gray-800 mb-4">Revenue by Payment Method</h2>
             {breakdown.by_payment_method.length === 0 ? (
               <p className="text-sm text-gray-400 text-center py-6">No data yet</p>
             ) : (
@@ -328,7 +337,7 @@ export default function AnalyticsPage() {
       {/* Revenue by category */}
       {breakdown?.by_category?.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">Revenue by Category (This Month)</h2>
+          <h2 className="font-semibold text-gray-800 mb-4">Revenue by Category</h2>
           <div className="space-y-3">
             {breakdown.by_category.map((cat, i) => {
               const maxRev = breakdown.by_category[0].revenue
@@ -355,7 +364,7 @@ export default function AnalyticsPage() {
       {/* Staff performance table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-800">Staff Performance (This Month)</h2>
+          <h2 className="font-semibold text-gray-800">Staff Performance</h2>
         </div>
         {staffData.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-10">No data yet</p>

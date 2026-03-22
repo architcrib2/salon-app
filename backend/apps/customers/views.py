@@ -15,6 +15,7 @@ from .serializers import (
     CustomerDetailSerializer,
     CustomerListSerializer,
 )
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class CustomerViewSet(ModelViewSet):
@@ -32,6 +33,23 @@ class CustomerViewSet(ModelViewSet):
         search = self.request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(name__icontains=search) | qs.filter(phone__icontains=search)
+
+        # Standard filter params
+        try:
+            params = parse_filter_params(self.request)
+            qs = apply_date_filter(qs, params, 'last_visit')
+            if 'staff_id' in params:
+                from apps.appointments.models import Appointment
+                appt_qs = Appointment.objects.filter(stylist_id=params['staff_id'], status='completed')
+                if 'start_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__gte=params['start_date'])
+                if 'end_date' in params:
+                    appt_qs = appt_qs.filter(scheduled_at__date__lte=params['end_date'])
+                customer_ids = appt_qs.values_list('customer_id', flat=True)
+                qs = qs.filter(id__in=customer_ids)
+        except Exception:
+            pass
+
         return qs.distinct()
 
     def get_serializer_class(self):

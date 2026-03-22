@@ -13,6 +13,7 @@ import { getServices } from '../../api/services'
 import Badge from '../../components/Badge'
 import Modal from '../../components/Modal'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 
 /** Hours displayed in calendar (9AM to 9PM) */
@@ -29,6 +30,10 @@ const STATUS_COLORS = {
 export default function AppointmentsPage() {
   const [currentDate, setCurrentDate] = useState(new Date())
   const dateStr = format(currentDate, 'yyyy-MM-dd')
+
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'today', ...durationToDates('today') },
+  })
 
   const [appointments, setAppointments] = useState([])
   const [stylists, setStylists] = useState([])
@@ -51,8 +56,12 @@ export default function AppointmentsPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
+      // Pass staff_id filter to calendar if set
+      const calParams = new URLSearchParams()
+      if (filters.staff_id) calParams.set('staff_id', filters.staff_id)
+
       const [calRes, staffRes] = await Promise.all([
-        getAppointmentCalendar(dateStr),
+        getAppointmentCalendar(dateStr, calParams.toString() ? calParams : undefined),
         getStaff(),
       ])
       setAppointments(calRes.data.data || [])
@@ -62,7 +71,7 @@ export default function AppointmentsPage() {
     } finally {
       setLoading(false)
     }
-  }, [dateStr])
+  }, [dateStr, apiParamsString])
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -70,6 +79,12 @@ export default function AppointmentsPage() {
     getCustomers().then(res => setCustomers(res.data.data || []))
     getServices({ active: true }).then(res => setServices(res.data.data || []))
   }, [])
+
+  // Client-side status filter
+  const activeStatuses = filters.status ? filters.status.split(',').filter(Boolean) : []
+  const displayedAppointments = activeStatuses.length > 0
+    ? appointments.filter(a => activeStatuses.includes(a.status))
+    : appointments
 
   const handleSlotClick = (stylistId, hour) => {
     const dt = format(currentDate, 'yyyy-MM-dd') + `T${String(hour).padStart(2, '0')}:00`
@@ -119,7 +134,7 @@ export default function AppointmentsPage() {
 
   /** Get appointments for a specific stylist + hour slot */
   const getSlotAppts = (stylistId, hour) => {
-    return appointments.filter(appt => {
+    return displayedAppointments.filter(appt => {
       if (appt.stylist !== stylistId) return false
       const apptHour = new Date(appt.scheduled_at).getHours()
       return apptHour === hour
@@ -138,7 +153,7 @@ export default function AppointmentsPage() {
         </button>
         <div className="text-center">
           <p className="font-semibold text-gray-800">{format(currentDate, 'EEEE, d MMMM yyyy')}</p>
-          <p className="text-xs text-gray-400">{appointments.length} appointment{appointments.length !== 1 ? 's' : ''}</p>
+          <p className="text-xs text-gray-400">{displayedAppointments.length} appointment{displayedAppointments.length !== 1 ? 's' : ''}</p>
         </div>
         <button
           onClick={() => setCurrentDate(addDays(currentDate, 1))}
@@ -163,6 +178,16 @@ export default function AppointmentsPage() {
           className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-accent"
         />
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'staff', 'status']}
+        statusOptions={['scheduled', 'in_progress', 'completed', 'cancelled', 'no_show']}
+        hasActive={hasActiveFilters}
+      />
 
       {loading ? <LoadingSpinner /> : (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

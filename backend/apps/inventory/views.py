@@ -10,6 +10,7 @@ from rest_framework.viewsets import ModelViewSet
 
 from .models import Product
 from .serializers import ProductSerializer
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class ProductViewSet(ModelViewSet):
@@ -291,6 +292,13 @@ class ConsumptionReportView(APIView):
                 created_at__date__gte=start,
                 created_at__date__lte=end,
             ).select_related('product', 'reference_invoice')
+
+            # Apply additional date filters from standard params (overrides defaults if provided)
+            try:
+                params = parse_filter_params(request)
+                transactions = apply_date_filter(transactions, params, 'created_at')
+            except Exception:
+                pass
 
             product_map = {}
             for t in transactions:

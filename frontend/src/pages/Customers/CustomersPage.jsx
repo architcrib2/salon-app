@@ -9,6 +9,7 @@ import Modal from '../../components/Modal'
 import Badge from '../../components/Badge'
 import LoadingSpinner from '../../components/LoadingSpinner'
 import EmptyState from '../../components/EmptyState'
+import { FilterBar, useFilters, durationToDates } from '../../components/filters'
 import toast from 'react-hot-toast'
 import { format } from 'date-fns'
 
@@ -21,10 +22,16 @@ export default function CustomersPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({ name: '', phone: '', email: '', gender: 'female', notes: '' })
 
-  const fetchCustomers = async (q = '') => {
+  const { filters, setFilters, clearFilters, toAPIParams, apiParamsString, hasActiveFilters } = useFilters({
+    defaults: { duration: 'this_month', ...durationToDates('this_month') },
+  })
+
+  const fetchCustomers = async (q = search) => {
     setLoading(true)
     try {
-      const res = await getCustomers(q)
+      const params = Object.fromEntries(toAPIParams())
+      if (q) params.search = q
+      const res = await getCustomers(params)
       setCustomers(res.data.data || [])
     } catch {
       toast.error('Failed to load customers')
@@ -33,11 +40,12 @@ export default function CustomersPage() {
     }
   }
 
-  useEffect(() => { fetchCustomers() }, [])
+  useEffect(() => { fetchCustomers() }, [apiParamsString])
 
   const handleSearch = (e) => {
-    setSearch(e.target.value)
-    fetchCustomers(e.target.value)
+    const q = e.target.value
+    setSearch(q)
+    fetchCustomers(q)
   }
 
   const handleCreate = async (e) => {
@@ -50,7 +58,7 @@ export default function CustomersPage() {
       toast.success('Customer created!')
       setShowModal(false)
       setForm({ name: '', phone: '', email: '', gender: 'female', notes: '' })
-      fetchCustomers(search)
+      fetchCustomers()
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to create customer')
     } finally {
@@ -79,6 +87,15 @@ export default function CustomersPage() {
           ➕ Add Customer
         </button>
       </div>
+
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onChange={setFilters}
+        onClear={clearFilters}
+        available={['duration', 'staff']}
+        hasActive={hasActiveFilters}
+      />
 
       {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

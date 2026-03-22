@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from apps.services.models import Service, ServiceCategory
 from apps.accounts.models import StaffMember
 from .models import PublicBookingRequest, Appointment
+from apps.core.filters import parse_filter_params, apply_date_filter
 
 
 class PublicServicesView(APIView):
@@ -103,6 +104,17 @@ class BookingRequestListView(APIView):
             qs = PublicBookingRequest.objects.all()
             if status_filter != 'all':
                 qs = qs.filter(status=status_filter)
+
+            # Standard filter params
+            try:
+                params = parse_filter_params(request)
+                qs = apply_date_filter(qs, params, 'created_at')
+                if 'status' in params:
+                    qs = qs.filter(status__in=params['status'])
+                if 'staff_id' in params:
+                    qs = qs.filter(preferred_stylist_id=params['staff_id'])
+            except Exception:
+                pass
 
             data = []
             for br in qs:
