@@ -52,7 +52,7 @@ export default function FilterBar({ filters = {}, onChange, onClear, available =
   useEffect(() => {
     if (!show('staff') || staffLoaded) return
     import('axios').then(({ default: axios }) => {
-      axios.get('/api/accounts/staff/?active=true').then(res => {
+      axios.get('/api/staff/').then(res => {
         const data = res.data?.data || res.data?.results || res.data || []
         setStaffList(Array.isArray(data) ? data : [])
         setStaffLoaded(true)
