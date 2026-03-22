@@ -1,6 +1,6 @@
 """
 Membership business logic.
-MembershipService handles purchase and session redemption with full validation.
+MembershipService handles purchase and session/amount redemption with full validation.
 """
 from datetime import date, timedelta
 from decimal import Decimal
@@ -14,7 +14,7 @@ class MembershipService:
         """
         Purchase a membership plan for a customer.
         Sets valid_until = today + validity_days.
-        Sends a WhatsApp notification to the customer.
+        For amount-based plans: copies total_credit_amount from the plan.
         Returns CustomerMembership instance.
         """
         from apps.memberships.models import CustomerMembership
@@ -24,28 +24,53 @@ class MembershipService:
         valid_until = today + timedelta(days=plan.validity_days)
         paid = amount_paid if amount_paid is not None else plan.price
 
-        membership = CustomerMembership.objects.create(
+        kwargs = dict(
             customer=customer,
             plan=plan,
             valid_until=valid_until,
-            sessions_total=plan.total_sessions,
-            sessions_used=0,
-            sessions_remaining=plan.total_sessions,
             amount_paid=paid,
             payment_method=payment_method,
             status='active',
             notes=notes,
         )
 
+        if plan.plan_type == 'amount':
+            credit = plan.total_credit_amount or paid
+            kwargs.update(
+                total_credit_amount=credit,
+                amount_used=Decimal('0.00'),
+                amount_remaining=credit,
+                sessions_total=None,
+                sessions_used=0,
+                sessions_remaining=None,
+            )
+        else:
+            kwargs.update(
+                sessions_total=plan.total_sessions,
+                sessions_used=0,
+                sessions_remaining=plan.total_sessions,
+                total_credit_amount=None,
+                amount_remaining=None,
+            )
+
+        membership = CustomerMembership.objects.create(**kwargs)
+
         # Notify customer via WhatsApp
         try:
             from apps.notifications.models import WhatsAppNotification
             from apps.notifications.constants import SALON_NAME
-            msg = (
-                f"Hi {customer.name}! 🎉 Your {plan.name} membership at {SALON_NAME} "
-                f"is now active. Enjoy {plan.total_sessions} sessions valid until "
-                f"{valid_until.strftime('%d %b %Y')}. Book your first session today!"
-            )
+            if plan.plan_type == 'amount':
+                msg = (
+                    f"Hi {customer.name}! 🎉 Your {plan.name} membership at {SALON_NAME} "
+                    f"is now active. You have ₹{credit} credit to use, valid until "
+                    f"{valid_until.strftime('%d %b %Y')}. Visit us soon!"
+                )
+            else:
+                msg = (
+                    f"Hi {customer.name}! 🎉 Your {plan.name} membership at {SALON_NAME} "
+                    f"is now active. Enjoy {plan.total_sessions} sessions valid until "
+                    f"{valid_until.strftime('%d %b %Y')}. Book your first session today!"
+                )
             WhatsAppNotification.objects.create(
                 customer=customer,
                 notification_type='booking_confirm',
@@ -60,16 +85,18 @@ class MembershipService:
         return membership
 
     @staticmethod
-    def redeem(membership, appointment, service, staff):
+    def redeem(membership, appointment, service, staff, amount_override=None):
         """
-        Redeem a session from a membership.
-        Validates: active status, not expired, sessions remaining, service in plan.
-        Decrements sessions_remaining; marks exhausted if last session.
+        Redeem a service from a membership.
+
+        Session plans: decrements sessions_remaining by 1.
+        Amount plans:  deducts value_redeemed (service.price or amount_override)
+                       from amount_remaining; marks exhausted when balance hits 0.
+
         Returns MembershipRedemption instance.
         """
         from apps.memberships.models import MembershipRedemption
 
-        # Validate membership status
         if membership.status != 'active':
             raise ValueError(f'Cannot redeem — membership is {membership.status}')
 
@@ -79,26 +106,51 @@ class MembershipService:
             membership.save(update_fields=['status'])
             raise ValueError('Membership has expired')
 
-        if membership.sessions_remaining <= 0:
-            raise ValueError('No sessions remaining in this membership')
-
-        # Validate service is included in the plan
-        if not membership.plan.services.filter(id=service.id).exists():
+        # Validate service is included in the plan (if any services are restricted)
+        if membership.plan.services.exists() and not membership.plan.services.filter(id=service.id).exists():
             raise ValueError(f'"{service.name}" is not included in this membership plan')
 
-        redemption = MembershipRedemption.objects.create(
-            membership=membership,
-            appointment=appointment,
-            service=service,
-            redeemed_by=staff,
-            value_redeemed=service.price,
-        )
+        value = amount_override if amount_override is not None else service.price
 
-        # Decrement session count
-        membership.sessions_used += 1
-        membership.sessions_remaining -= 1
-        if membership.sessions_remaining == 0:
-            membership.status = 'exhausted'
-        membership.save(update_fields=['sessions_used', 'sessions_remaining', 'status'])
+        if membership.plan.plan_type == 'amount':
+            if membership.amount_remaining is None or membership.amount_remaining <= 0:
+                raise ValueError('No credit remaining in this membership')
+            if value > membership.amount_remaining:
+                raise ValueError(
+                    f'Service costs ₹{value} but only ₹{membership.amount_remaining} credit remains'
+                )
+
+            redemption = MembershipRedemption.objects.create(
+                membership=membership,
+                appointment=appointment,
+                service=service,
+                redeemed_by=staff,
+                value_redeemed=value,
+            )
+
+            membership.amount_used = (membership.amount_used or Decimal('0')) + value
+            membership.amount_remaining = membership.amount_remaining - value
+            membership.sessions_used += 1  # track visit count even on amount plans
+            if membership.amount_remaining <= 0:
+                membership.status = 'exhausted'
+            membership.save(update_fields=['amount_used', 'amount_remaining', 'sessions_used', 'status'])
+
+        else:
+            if membership.sessions_remaining is None or membership.sessions_remaining <= 0:
+                raise ValueError('No sessions remaining in this membership')
+
+            redemption = MembershipRedemption.objects.create(
+                membership=membership,
+                appointment=appointment,
+                service=service,
+                redeemed_by=staff,
+                value_redeemed=value,
+            )
+
+            membership.sessions_used += 1
+            membership.sessions_remaining -= 1
+            if membership.sessions_remaining == 0:
+                membership.status = 'exhausted'
+            membership.save(update_fields=['sessions_used', 'sessions_remaining', 'status'])
 
         return redemption

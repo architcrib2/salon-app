@@ -10,7 +10,12 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MembershipPlan
-        fields = ['id', 'name', 'description', 'services', 'service_ids', 'total_sessions', 'validity_days', 'price', 'is_active']
+        fields = [
+            'id', 'name', 'description', 'plan_type',
+            'services', 'service_ids',
+            'total_sessions', 'total_credit_amount',
+            'validity_days', 'price', 'is_active',
+        ]
 
     def create(self, validated_data):
         service_ids = validated_data.pop('service_ids', [])
@@ -32,21 +37,35 @@ class MembershipPlanSerializer(serializers.ModelSerializer):
 class CustomerMembershipSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
     plan_name = serializers.CharField(source='plan.name', read_only=True)
+    plan_type = serializers.CharField(source='plan.plan_type', read_only=True)
     progress_pct = serializers.SerializerMethodField()
+    bonus_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomerMembership
         fields = [
-            'id', 'customer', 'customer_name', 'plan', 'plan_name',
-            'purchased_at', 'valid_until', 'sessions_total', 'sessions_used',
-            'sessions_remaining', 'progress_pct', 'amount_paid', 'payment_method',
-            'status', 'notes',
+            'id', 'customer', 'customer_name', 'plan', 'plan_name', 'plan_type',
+            'purchased_at', 'valid_until',
+            'sessions_total', 'sessions_used', 'sessions_remaining',
+            'amount_paid', 'total_credit_amount', 'amount_used', 'amount_remaining',
+            'bonus_amount', 'progress_pct',
+            'payment_method', 'status', 'notes',
         ]
 
     def get_progress_pct(self, obj):
-        if obj.sessions_total == 0:
+        if obj.plan.plan_type == 'amount':
+            if not obj.total_credit_amount or float(obj.total_credit_amount) == 0:
+                return 0
+            return round(float(obj.amount_used or 0) / float(obj.total_credit_amount) * 100)
+        if not obj.sessions_total:
             return 0
         return round((obj.sessions_used / obj.sessions_total) * 100)
+
+    def get_bonus_amount(self, obj):
+        if obj.plan.plan_type == 'amount' and obj.total_credit_amount and obj.amount_paid:
+            bonus = float(obj.total_credit_amount) - float(obj.amount_paid)
+            return round(bonus, 2) if bonus > 0 else 0
+        return 0
 
 
 class MembershipRedemptionSerializer(serializers.ModelSerializer):
@@ -55,4 +74,5 @@ class MembershipRedemptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MembershipRedemption
-        fields = ['id', 'membership', 'appointment', 'service', 'service_name', 'stylist_name', 'redeemed_at', 'value_redeemed']
+        fields = ['id', 'membership', 'appointment', 'service', 'service_name',
+                  'stylist_name', 'redeemed_at', 'value_redeemed']

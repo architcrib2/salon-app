@@ -72,15 +72,20 @@ class PurchaseMembershipView(APIView):
 
     def post(self, request):
         try:
+            from decimal import Decimal
             customer_id = request.data.get('customer_id')
             plan_id = request.data.get('plan_id')
             payment_method = request.data.get('payment_method', 'cash')
+            notes = request.data.get('notes', '')
+            # amount_paid can be overridden (e.g. negotiated price different from plan.price)
+            amount_paid_raw = request.data.get('amount_paid')
+            amount_paid = Decimal(str(amount_paid_raw)) if amount_paid_raw else None
 
             from apps.customers.models import Customer
             customer = Customer.objects.get(pk=customer_id)
             plan = MembershipPlan.objects.get(pk=plan_id)
 
-            membership = MembershipService.purchase(customer, plan, payment_method)
+            membership = MembershipService.purchase(customer, plan, payment_method, amount_paid=amount_paid, notes=notes)
             return Response({
                 'success': True,
                 'data': CustomerMembershipSerializer(membership).data,
