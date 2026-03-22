@@ -55,10 +55,33 @@ def parse_filter_params(request):
 def apply_date_filter(queryset, params, date_field):
     """
     Applies start_date and end_date from parsed params to a queryset.
-    Works for both DateField and DateTimeField.
+    Auto-detects DateField vs DateTimeField:
+      - DateField     → uses __gte / __lte  (no __date transform — unsupported on DateField)
+      - DateTimeField → uses __date__gte / __date__lte  (timezone-safe)
     """
-    if 'start_date' in params:
-        queryset = queryset.filter(**{f'{date_field}__date__gte': params['start_date']})
-    if 'end_date' in params:
-        queryset = queryset.filter(**{f'{date_field}__date__lte': params['end_date']})
+    if 'start_date' not in params and 'end_date' not in params:
+        return queryset
+
+    # Detect plain DateField (DateTimeField is a subclass of DateField in Django,
+    # so check the exact type).
+    is_plain_datefield = False
+    try:
+        from django.db.models import DateField as DField, DateTimeField as DTField
+        field = queryset.model._meta.get_field(date_field.split('__')[0])
+        if type(field) is DField:          # exact match, not DateTimeField subclass
+            is_plain_datefield = True
+    except Exception:
+        pass
+
+    if is_plain_datefield:
+        if 'start_date' in params:
+            queryset = queryset.filter(**{f'{date_field}__gte': params['start_date']})
+        if 'end_date' in params:
+            queryset = queryset.filter(**{f'{date_field}__lte': params['end_date']})
+    else:
+        if 'start_date' in params:
+            queryset = queryset.filter(**{f'{date_field}__date__gte': params['start_date']})
+        if 'end_date' in params:
+            queryset = queryset.filter(**{f'{date_field}__date__lte': params['end_date']})
+
     return queryset
