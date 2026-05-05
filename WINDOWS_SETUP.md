@@ -360,11 +360,13 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 Then try activate again. (Not needed in CMD.)
 
-**"pip install fails"**
+**"Failed to build Pillow" or pip install fails**
 ```
-pip install --upgrade pip
+python -m pip install --upgrade pip
+pip install Pillow==10.2.0 --only-binary=:all:
 pip install -r requirements.txt
 ```
+The `--only-binary=:all:` flag downloads a pre-built file instead of trying to compile from source.
 
 **Port already in use**
 - Backend: change `runserver 8001` to `runserver 8002`
