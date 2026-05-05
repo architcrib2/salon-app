@@ -196,16 +196,25 @@ class InvoiceViewSet(ViewSet):
                 customer.save(update_fields=['loyalty_points', 'last_visit'])
 
             else:
-                # ── MODE B: Walk-in (new) ─────────────────────────────────────
+                # ── MODE B: Walk-in ───────────────────────────────────────────
                 customer_id = data.get('customer_id')
                 items_data = data.get('items', [])
 
-                if not customer_id:
-                    return Response({'success': False, 'message': 'customer_id required for walk-in billing'}, status=400)
                 if not items_data:
-                    return Response({'success': False, 'message': 'items required for walk-in billing (min 1)'}, status=400)
+                    return Response({'success': False, 'message': 'items required (min 1)'}, status=400)
 
-                customer = Customer.objects.get(pk=customer_id)
+                if customer_id:
+                    customer = Customer.objects.get(pk=customer_id)
+                else:
+                    # Quick bill: accept plain name + phone, create customer if new
+                    customer_name = (data.get('customer_name') or '').strip()
+                    customer_phone = (data.get('customer_phone') or '').strip()
+                    if not customer_name or not customer_phone:
+                        return Response({'success': False, 'message': 'customer_name and customer_phone required'}, status=400)
+                    customer, _ = Customer.objects.get_or_create(
+                        phone=customer_phone,
+                        defaults={'name': customer_name},
+                    )
 
                 # Validate loyalty points
                 if loyalty_pts > customer.loyalty_points:

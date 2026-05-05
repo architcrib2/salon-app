@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext'
 import toast from 'react-hot-toast'
 
 const CORE_NAV = [
+  { path: '/quick-bill', label: 'Quick Bill', icon: '⚡' },
   { path: '/', label: 'Dashboard', icon: '🏠', exact: true },
   { path: '/appointments', label: 'Appointments', icon: '📅' },
   { path: '/customers', label: 'Customers', icon: '👥' },

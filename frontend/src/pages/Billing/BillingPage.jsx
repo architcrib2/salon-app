@@ -46,12 +46,20 @@ export default function BillingPage() {
         <div>
           <h2 className="text-sm text-gray-500">Total shown: <span className="font-bold text-gray-800 text-lg">₹{totalRevenue.toLocaleString('en-IN')}</span></h2>
         </div>
-        <button
-          onClick={() => navigate('/billing/new')}
-          className="bg-accent text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-accent-dark transition-colors"
-        >
-          ➕ Create Invoice
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => navigate('/billing/walkin')}
+            className="bg-accent text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-accent-dark transition-colors"
+          >
+            ⚡ Quick Bill
+          </button>
+          <button
+            onClick={() => navigate('/billing/new')}
+            className="bg-white border border-gray-200 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors"
+          >
+            ➕ From Appointment
+          </button>
+        </div>
       </div>
 
       {/* Filter Bar */}

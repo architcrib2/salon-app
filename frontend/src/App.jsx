@@ -32,6 +32,7 @@ import IntelligencePage from './pages/Analytics/IntelligencePage'
 import StaffIntelligencePage from './pages/Analytics/StaffIntelligencePage'
 import InventoryIntelligencePage from './pages/Analytics/InventoryIntelligencePage'
 import WalkinBillingPage from './pages/Billing/WalkinBillingPage'
+import QuickBillPage from './pages/Billing/QuickBillPage'
 // Public pages (no auth / no sidebar)
 import QueueDisplayPage from './pages/Waitlist/QueueDisplayPage'
 import OnlineBookingPage from './pages/Bookings/OnlineBookingPage'
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="staff-intelligence" element={<StaffIntelligencePage />} />
         <Route path="inventory-intelligence" element={<InventoryIntelligencePage />} />
         <Route path="billing/walkin" element={<WalkinBillingPage />} />
+        <Route path="quick-bill" element={<QuickBillPage />} />
       </Route>
     </Routes>
   )
