@@ -1,19 +1,20 @@
-# Salon App — Windows Installation Guide
+# Salon App — Windows Setup Guide
 
-Complete setup from scratch. Follow every step in order.
+Complete setup, user management, and maintenance reference.
 
 ---
 
-## Step 1 — Install Python 3.11
+## PART A — FRESH INSTALLATION
+
+### Step 1 — Install Python 3.11
 
 1. Go to: https://www.python.org/downloads/release/python-3119/
 2. Scroll down, click **Windows installer (64-bit)**
 3. Run the installer
-4. **IMPORTANT:** Check the box **"Add Python to PATH"** before clicking Install
-5. Click **Install Now**
-6. When done, click **Close**
+4. **IMPORTANT:** Check **"Add Python to PATH"** before clicking Install
+5. Click **Install Now** → **Close**
 
-Verify: open **Command Prompt** (press `Win + R`, type `cmd`, press Enter) and run:
+Verify in Command Prompt (`Win + R` → type `cmd` → Enter):
 ```
 python --version
 ```
@@ -21,14 +22,13 @@ You should see `Python 3.11.x`
 
 ---
 
-## Step 2 — Install Node.js
+### Step 2 — Install Node.js
 
 1. Go to: https://nodejs.org/en/download
 2. Click **Windows Installer (.msi) — LTS version**
-3. Run the installer, click Next through all steps, keep defaults
-4. Click **Install**, then **Finish**
+3. Run the installer, keep all defaults → **Finish**
 
-Verify in Command Prompt:
+Verify:
 ```
 node --version
 npm --version
@@ -36,56 +36,59 @@ npm --version
 
 ---
 
-## Step 3 — Copy the App Files
+### Step 3 — Copy the App Files
 
-Copy the entire `salon-app` folder to the client laptop.  
-For example, put it at: `C:\salon-app`
+Copy the entire `salon-app` folder to the laptop.
+Put it at: `C:\salon-app`
 
-You can use a USB drive or zip file.
+Use a USB drive or zip file.
 
 ---
 
-## Step 4 — Set Up the Backend
+### Step 4 — Set Up the Backend
 
-Open **Command Prompt** and run these commands one by one:
+Open **Command Prompt** and run these one by one:
 
 ```
 cd C:\salon-app\backend
-```
-
-Create a virtual environment:
-```
 python -m venv venv
-```
-
-Activate it:
-```
 venv\Scripts\activate
-```
-
-You should see `(venv)` at the start of your prompt.
-
-Install dependencies:
-```
 pip install -r requirements.txt
-```
-
-Set up the database:
-```
 python manage.py migrate
 ```
 
-Load demo data (creates sample customers, services, appointments):
+You should see `(venv)` at the start of the prompt after activation.
+
+---
+
+### Step 5 — Create the Admin User
+
+While still in the backend folder with venv active:
+
 ```
-cd C:\salon-app
-python seed.py
+python manage.py shell
+```
+
+Inside the shell, paste this (replace name/password as needed):
+
+```python
+from apps.accounts.models import StaffMember
+u = StaffMember.objects.create_superuser(
+    username='admin',
+    password='demo1234',
+    email='admin@salon.com',
+    full_name='Salon Admin',
+    role='owner'
+)
+print('Admin created:', u.username)
+exit()
 ```
 
 ---
 
-## Step 5 — Set Up the Frontend
+### Step 6 — Set Up the Frontend
 
-Open a **second Command Prompt window** and run:
+Open a **second Command Prompt window**:
 
 ```
 cd C:\salon-app\frontend
@@ -94,103 +97,298 @@ npm install
 
 ---
 
-## Step 6 — Start the App
+### Step 7 — Start the App
 
 You need **two Command Prompt windows** running at the same time.
 
-### Window 1 — Backend
-
+**Window 1 — Backend:**
 ```
 cd C:\salon-app\backend
 venv\Scripts\activate
 python manage.py runserver 8001
 ```
 
-Leave this window open. You should see:
-```
-Starting development server at http://127.0.0.1:8001/
-```
+You should see: `Starting development server at http://127.0.0.1:8001/`
 
-### Window 2 — Frontend
-
+**Window 2 — Frontend:**
 ```
 cd C:\salon-app\frontend
 npm run dev
 ```
 
-Leave this window open. You should see:
+You should see: `Local: http://localhost:5173/`
+
+---
+
+### Step 8 — Open the App
+
+Open Chrome and go to: **http://localhost:5173**
+
+---
+
+## PART B — USER MANAGEMENT
+
+All user commands run inside the Django shell.  
+Always activate venv first:
+
 ```
-  VITE v5.x.x  ready in xxx ms
-  ➜  Local:   http://localhost:5173/
+cd C:\salon-app\backend
+venv\Scripts\activate
+python manage.py shell
 ```
 
 ---
 
-## Step 7 — Open the App
+### Create a New Admin / Owner
 
-Open any browser (Chrome recommended) and go to:
-
-```
-http://localhost:5173
+```python
+from apps.accounts.models import StaffMember
+StaffMember.objects.create_superuser(
+    username='admin',
+    password='demo1234',
+    email='admin@salon.com',
+    full_name='Salon Owner',
+    role='owner'
+)
+exit()
 ```
 
 ---
 
-## Login Credentials
+### Create a Staff Member (non-admin)
 
-| Field    | Value      |
-|----------|------------|
-| Username | `admin`    |
-| Password | `demo1234` |
+```python
+from apps.accounts.models import StaffMember
+StaffMember.objects.create_user(
+    username='priya',
+    password='staff123',
+    full_name='Priya Sharma',
+    role='stylist'
+)
+exit()
+```
+
+Role options: `owner`, `manager`, `stylist`, `receptionist`
 
 ---
 
-## Troubleshooting
+### List All Users
+
+```python
+from apps.accounts.models import StaffMember
+for u in StaffMember.objects.all():
+    print(u.username, '|', u.full_name, '|', u.role, '| active:', u.is_active)
+exit()
+```
+
+---
+
+### Reset a User's Password
+
+```python
+from apps.accounts.models import StaffMember
+u = StaffMember.objects.get(username='admin')
+u.set_password('newpassword123')
+u.save()
+print('Password updated')
+exit()
+```
+
+---
+
+### Delete a User
+
+```python
+from apps.accounts.models import StaffMember
+StaffMember.objects.get(username='priya').delete()
+print('Deleted')
+exit()
+```
+
+---
+
+### Disable a User (without deleting)
+
+```python
+from apps.accounts.models import StaffMember
+u = StaffMember.objects.get(username='priya')
+u.is_active = False
+u.save()
+exit()
+```
+
+---
+
+## PART C — WIPE & RESET DATA
+
+### Delete All Billing / Invoice Data Only
+
+```
+cd C:\salon-app\backend
+venv\Scripts\activate
+python manage.py shell
+```
+
+```python
+from apps.billing.models import Invoice, InvoiceItem
+InvoiceItem.objects.all().delete()
+Invoice.objects.all().delete()
+print('All invoices deleted')
+exit()
+```
+
+---
+
+### Delete All Customers Only
+
+```python
+from apps.customers.models import Customer
+Customer.objects.all().delete()
+print('All customers deleted')
+exit()
+```
+
+---
+
+### Delete All Appointments Only
+
+```python
+from apps.appointments.models import Appointment
+Appointment.objects.all().delete()
+print('All appointments deleted')
+exit()
+```
+
+---
+
+### Wipe Everything — Complete Fresh Start
+
+This deletes the entire database and recreates it blank.
+
+```
+cd C:\salon-app\backend
+venv\Scripts\activate
+```
+
+Delete the database file:
+```
+del db.sqlite3
+```
+
+Recreate all tables:
+```
+python manage.py migrate
+```
+
+Create admin again:
+```
+python manage.py shell
+```
+
+```python
+from apps.accounts.models import StaffMember
+StaffMember.objects.create_superuser(
+    username='admin',
+    password='demo1234',
+    email='admin@salon.com',
+    full_name='Salon Admin',
+    role='owner'
+)
+print('Done')
+exit()
+```
+
+---
+
+### Full Reinstall — Delete Everything Including Dependencies
+
+Use this if the app is broken and you want to start from absolute zero.
+
+```
+cd C:\salon-app\backend
+venv\Scripts\activate
+deactivate
+```
+
+Delete backend environment and database:
+```
+cd C:\salon-app\backend
+rmdir /s /q venv
+del db.sqlite3
+```
+
+Delete frontend packages:
+```
+cd C:\salon-app\frontend
+rmdir /s /q node_modules
+```
+
+Now follow **Part A Steps 4–8** again from scratch.
+
+---
+
+## PART D — DAILY STARTUP
+
+Every time you start the laptop, run this:
+
+**Window 1:**
+```
+cd C:\salon-app\backend
+venv\Scripts\activate
+python manage.py runserver 8001
+```
+
+**Window 2:**
+```
+cd C:\salon-app\frontend
+npm run dev
+```
+
+Open Chrome → **http://localhost:5173**
+
+---
+
+## PART E — TROUBLESHOOTING
 
 **"python is not recognized"**
 - You forgot to check "Add Python to PATH" during install
-- Fix: uninstall Python and reinstall, making sure to check that box
+- Fix: uninstall Python and reinstall, checking that box
 
-**"venv\Scripts\activate is not recognized"**
-- Run this first: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
-- Then try again (only needed in PowerShell, not CMD)
+**"venv\Scripts\activate" fails in PowerShell**
+```
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+Then try activate again. (Not needed in CMD.)
 
-**"pip install fails on Pillow"**
-- Run: `pip install --upgrade pip` then retry `pip install -r requirements.txt`
+**"pip install fails"**
+```
+pip install --upgrade pip
+pip install -r requirements.txt
+```
 
-**Port already in use error**
-- Something else is using port 8001 or 5173
+**Port already in use**
 - Backend: change `runserver 8001` to `runserver 8002`
-- Frontend: edit `frontend/vite.config.js`, change `port: 5173` to `port: 5174`
-- Also update `target: 'http://127.0.0.1:8002'` in vite.config.js if you changed the backend port
+- Frontend: open `frontend\vite.config.js`, change `port: 5173` to `port: 5174` and `target` to `http://127.0.0.1:8002`
 
-**App loads but shows blank/login fails**
-- Make sure both windows (backend + frontend) are still running
-- Check that the backend window shows no red errors
+**App loads but login fails**
+- Both windows must be running
+- Run the Reset Password command in Part B
 
-**Windows Defender / Antivirus blocks Python**
+**Windows Defender blocks Python**
 - Click "Allow access" when prompted
-- Or temporarily disable real-time protection during install
-
----
-
-## Every Time You Start the App
-
-You don't need to redo Steps 1–5. Just:
-
-1. Open Window 1 → `cd C:\salon-app\backend` → `venv\Scripts\activate` → `python manage.py runserver 8001`
-2. Open Window 2 → `cd C:\salon-app\frontend` → `npm run dev`
-3. Open browser → `http://localhost:5173`
+- Or temporarily disable real-time protection during setup
 
 ---
 
 ## Quick Reference
 
-| What          | Command / URL                        |
-|---------------|--------------------------------------|
-| Start backend | `python manage.py runserver 8001`    |
-| Start frontend| `npm run dev`                        |
-| App URL       | http://localhost:5173                |
-| Admin login   | admin / demo1234                     |
-| Backend API   | http://localhost:8001/api/           |
-| Database file | `C:\salon-app\backend\db.sqlite3`    |
+| What                | Command / Value                       |
+|---------------------|---------------------------------------|
+| Start backend       | `python manage.py runserver 8001`     |
+| Start frontend      | `npm run dev`                         |
+| App URL             | http://localhost:5173                 |
+| Default login       | admin / demo1234                      |
+| Backend API         | http://localhost:8001/api/            |
+| Database file       | `C:\salon-app\backend\db.sqlite3`     |
+| Open Django shell   | `python manage.py shell`              |
+| Wipe DB             | `del db.sqlite3` then `python manage.py migrate` |
