@@ -8,12 +8,17 @@ from apps.accounts.serializers import StaffMemberSerializer
 class InvoiceItemSerializer(serializers.ModelSerializer):
     """Nested line item for invoice detail view."""
 
-    service_name = serializers.CharField(source='service.name', read_only=True)
+    service_name = serializers.SerializerMethodField()
     stylist_name = serializers.CharField(source='stylist.full_name', read_only=True)
+
+    def get_service_name(self, obj):
+        if obj.service:
+            return obj.service.name
+        return obj.description or 'Service'
 
     class Meta:
         model = InvoiceItem
-        fields = ['id', 'service', 'service_name', 'stylist', 'stylist_name', 'price', 'gst_rate', 'gst_amount']
+        fields = ['id', 'service', 'service_name', 'description', 'stylist', 'stylist_name', 'price', 'gst_rate', 'gst_amount']
 
 
 class InvoiceListSerializer(serializers.ModelSerializer):

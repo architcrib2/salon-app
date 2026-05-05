@@ -24,6 +24,88 @@ export default function InvoiceDetailPage() {
       .finally(() => setLoading(false))
   }, [id])
 
+  const handleDownloadGSTInvoice = () => {
+    if (!invoice) return
+    const dateStr = format(new Date(invoice.created_at), 'd MMM yyyy, h:mm a')
+    const rows = invoice.items?.map(item => `
+      <tr>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0">${item.service_name}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">₹${Number(item.price).toLocaleString('en-IN')}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">${Number(item.gst_rate).toFixed(0)}%</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">₹${Number(item.gst_amount).toFixed(2)}</td>
+      </tr>`).join('') || ''
+
+    const discountRow = Number(invoice.discount_amount) > 0
+      ? `<tr><td style="color:#16a34a;padding:6px">Discount</td><td class="text-right" style="color:#16a34a;padding:6px">−₹${Number(invoice.discount_amount).toLocaleString('en-IN')}</td></tr>`
+      : ''
+    const loyaltyRow = Number(invoice.loyalty_points_used) > 0
+      ? `<tr><td style="color:#d97706;padding:6px">Loyalty Points (${invoice.loyalty_points_used} pts)</td><td class="text-right" style="color:#d97706;padding:6px">−₹${invoice.loyalty_points_used}</td></tr>`
+      : ''
+    const tipRow = Number(invoice.tip_amount) > 0
+      ? `<tr><td style="padding:6px">Tip</td><td class="text-right" style="padding:6px">₹${Number(invoice.tip_amount).toLocaleString('en-IN')}</td></tr>`
+      : ''
+
+    const html = `
+      <html><head><title>GST Invoice — ${invoice.invoice_number}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:30px;max-width:600px;margin:auto;color:#222}
+        h1{font-size:22px;margin:0}h2{font-size:13px;color:#666;font-weight:normal;margin:4px 0 0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f5f5f5;padding:8px 6px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+        .text-right{text-align:right}.divider{border:none;border-top:1px solid #eee;margin:14px 0}
+        .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:#dcfce7;color:#16a34a}
+        .label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+        @media print{body{padding:0}}
+      </style></head>
+      <body>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+          <div><h1>✂️ KaratOS Salon</h1><h2>GST Tax Invoice</h2></div>
+          <div style="text-align:right">
+            <div style="font-family:monospace;font-weight:bold;font-size:14px">${invoice.invoice_number}</div>
+            <div style="font-size:12px;color:#666;margin-top:3px">${dateStr}</div>
+            <div class="badge" style="margin-top:6px">${invoice.payment_status}</div>
+          </div>
+        </div>
+        <hr class="divider">
+        <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div class="label">Billed To</div>
+            <div style="font-weight:600;font-size:14px">${invoice.customer_name}</div>
+            <div style="color:#666;font-size:13px">${invoice.customer_phone || ''}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="label">Payment</div>
+            <div style="font-weight:600;font-size:14px;text-transform:capitalize">${invoice.payment_method}</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="text-right">Amount</th>
+              <th class="text-right">GST Rate</th>
+              <th class="text-right">GST Amt</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <hr class="divider">
+        <table style="font-size:13px">
+          <tr><td style="color:#666;padding:5px">Subtotal</td><td class="text-right" style="padding:5px">₹${Number(invoice.subtotal).toLocaleString('en-IN')}</td></tr>
+          <tr><td style="color:#666;padding:5px">GST</td><td class="text-right" style="padding:5px">₹${Number(invoice.gst_amount).toFixed(2)}</td></tr>
+          ${discountRow}${loyaltyRow}${tipRow}
+          <tr><td style="font-weight:bold;font-size:15px;padding:8px 5px 5px">Total</td><td class="text-right" style="font-weight:bold;font-size:15px;padding:8px 5px 5px">₹${Number(invoice.total_amount).toLocaleString('en-IN')}</td></tr>
+        </table>
+        <hr class="divider" style="margin-top:24px">
+        <p style="text-align:center;color:#999;font-size:12px">Thank you for visiting KaratOS Salon! ✂️</p>
+      </body></html>`
+
+    const w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
+    w.print()
+  }
+
   if (loading) return <LoadingSpinner />
   if (!invoice) return <div className="text-center py-12 text-gray-500">Invoice not found</div>
 
@@ -33,12 +115,20 @@ export default function InvoiceDetailPage() {
         <button onClick={() => navigate('/billing')} className="text-sm text-accent hover:text-accent-dark flex items-center gap-1">
           ← Back
         </button>
-        <button
-          onClick={() => window.print()}
-          className="bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
-        >
-          🖨️ Print
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleDownloadGSTInvoice}
+            className="bg-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent-dark"
+          >
+            📄 GST Invoice
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50"
+          >
+            🖨️ Print
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5 print:shadow-none print:border-none">
@@ -106,7 +196,7 @@ export default function InvoiceDetailPage() {
             <span>₹{Number(invoice.subtotal).toLocaleString('en-IN')}</span>
           </div>
           <div className="flex justify-between text-gray-600">
-            <span>GST (18%)</span>
+            <span>GST</span>
             <span>₹{Number(invoice.gst_amount).toFixed(2)}</span>
           </div>
           {Number(invoice.discount_amount) > 0 && (

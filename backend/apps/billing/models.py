@@ -69,10 +69,12 @@ class InvoiceItem(models.Model):
     Line item in an invoice — one per service rendered.
     price and gst_rate are snapshots at time of billing (in case service prices change later).
     gst_amount = price * gst_rate / 100
+    For free-text items, service is null and description holds the item name.
     """
 
     invoice = models.ForeignKey(Invoice, on_delete=models.CASCADE, related_name='items')
-    service = models.ForeignKey(Service, on_delete=models.PROTECT)
+    service = models.ForeignKey(Service, on_delete=models.PROTECT, null=True, blank=True)
+    description = models.CharField(max_length=200, blank=True, default='')
     stylist = models.ForeignKey(StaffMember, on_delete=models.PROTECT, null=True, blank=True)
     # Snapshot of price at time of billing — important for historical accuracy
     price = models.DecimalField(max_digits=8, decimal_places=2)

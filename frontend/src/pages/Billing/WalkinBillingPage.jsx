@@ -1,7 +1,7 @@
 /**
  * @file Walk-in Billing page.
- * 4-step wizard: Customer → Services → Payment → Receipt
- * Creates an invoice without a pre-existing appointment.
+ * 4-step wizard: Customer → Items → Payment → Receipt
+ * Supports free-text items (no predefined service catalog required).
  */
 import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -10,9 +10,12 @@ import { getServices } from '../../api/services'
 import { createInvoice } from '../../api/billing'
 import toast from 'react-hot-toast'
 
-const STEPS = ['Customer', 'Services', 'Payment', 'Receipt']
+const STEPS = ['Customer', 'Items', 'Payment', 'Receipt']
 const PAYMENT_METHODS = ['cash', 'upi', 'card']
 const GST_RATE = 5
+
+let _customItemId = 0
+const nextId = () => ++_customItemId
 
 export default function WalkinBillingPage() {
   const navigate = useNavigate()
@@ -24,9 +27,18 @@ export default function WalkinBillingPage() {
   const [selectedCustomer, setSelectedCustomer] = useState(null)
   const [showNewCustomer, setShowNewCustomer] = useState(false)
   const [newCustomerForm, setNewCustomerForm] = useState({ name: '', phone: '', email: '' })
+
+  // Free-text custom items
+  const [customItems, setCustomItems] = useState([])
+  const [customItemDesc, setCustomItemDesc] = useState('')
+  const [customItemAmount, setCustomItemAmount] = useState('')
+
+  // Catalog items (optional)
   const [allServices, setAllServices] = useState([])
   const [selectedServices, setSelectedServices] = useState([])
   const [serviceSearch, setServiceSearch] = useState('')
+  const [showCatalog, setShowCatalog] = useState(false)
+
   const [paymentMethod, setPaymentMethod] = useState('cash')
   const [discountAmount, setDiscountAmount] = useState(0)
   const [notes, setNotes] = useState('')
@@ -34,12 +46,10 @@ export default function WalkinBillingPage() {
   const [saving, setSaving] = useState(false)
   const [creatingCustomer, setCreatingCustomer] = useState(false)
 
-  // Load services on mount
   useEffect(() => {
     getServices().then(r => setAllServices(r.data.data || [])).catch(() => {})
   }, [])
 
-  // Search customers
   useEffect(() => {
     if (customerSearch.length < 2) { setCustomerResults([]); return }
     const t = setTimeout(() => {
@@ -70,6 +80,18 @@ export default function WalkinBillingPage() {
     }
   }
 
+  const addCustomItem = () => {
+    const desc = customItemDesc.trim()
+    const amount = Number(customItemAmount)
+    if (!desc) { toast.error('Enter a service / item name'); return }
+    if (!amount || amount <= 0) { toast.error('Enter a valid amount'); return }
+    setCustomItems(prev => [...prev, { id: nextId(), description: desc, amount }])
+    setCustomItemDesc('')
+    setCustomItemAmount('')
+  }
+
+  const removeCustomItem = (id) => setCustomItems(prev => prev.filter(i => i.id !== id))
+
   const toggleService = (svc) => {
     setSelectedServices(prev => {
       const exists = prev.find(s => s.id === svc.id)
@@ -78,23 +100,26 @@ export default function WalkinBillingPage() {
     })
   }
 
-  // Totals
-  const subtotal = selectedServices.reduce((sum, s) => sum + Number(s.price) * (s.qty || 1), 0)
+  const allItems = [
+    ...customItems.map(i => ({ key: `c-${i.id}`, name: i.description, price: i.amount })),
+    ...selectedServices.map(s => ({ key: `s-${s.id}`, name: s.name, price: Number(s.price) })),
+  ]
+
+  const subtotal = allItems.reduce((sum, i) => sum + Number(i.price), 0)
   const gstAmount = Math.round(subtotal * GST_RATE / 100)
   const discount = Math.min(Number(discountAmount) || 0, subtotal + gstAmount)
   const total = subtotal + gstAmount - discount
 
   const handleSubmit = async () => {
     if (!selectedCustomer) { toast.error('Select a customer'); return }
-    if (selectedServices.length === 0) { toast.error('Add at least one service'); return }
+    if (allItems.length === 0) { toast.error('Add at least one item'); return }
 
     setSaving(true)
     try {
-      const items = selectedServices.map(s => ({
-        service_id: s.id,
-        quantity: s.qty || 1,
-        unit_price: s.price,
-      }))
+      const items = [
+        ...customItems.map(i => ({ description: i.description, unit_price: i.amount, gst_rate: GST_RATE })),
+        ...selectedServices.map(s => ({ service_id: s.id, quantity: 1, unit_price: s.price })),
+      ]
       const res = await createInvoice({
         is_walkin: true,
         customer_id: selectedCustomer.id,
@@ -114,23 +139,94 @@ export default function WalkinBillingPage() {
     }
   }
 
-  const handlePrint = () => {
-    if (printRef.current) {
-      const html = printRef.current.innerHTML
-      const w = window.open('', '_blank')
-      w.document.write(`<html><head><title>Invoice</title>
-        <style>body{font-family:sans-serif;padding:20px;max-width:400px;margin:auto}
-        table{width:100%;border-collapse:collapse}td,th{padding:6px;border-bottom:1px solid #eee;text-align:left}
-        .total{font-weight:bold;font-size:1.1em}.text-right{text-align:right}</style>
-      </head><body>${html}</body></html>`)
-      w.document.close()
-      w.print()
-    }
+  const handlePrintGSTInvoice = () => {
+    const invoiceItems = invoice?.items || allItems.map(i => ({ service_name: i.name, price: i.price, gst_rate: GST_RATE, gst_amount: Math.round(i.price * GST_RATE / 100) }))
+    const dateStr = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    const invoiceNum = invoice?.invoice_number || ''
+
+    const rows = invoiceItems.map(item => `
+      <tr>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0">${item.service_name}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">₹${Number(item.price).toLocaleString('en-IN')}</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">${Number(item.gst_rate).toFixed(0)}%</td>
+        <td style="padding:8px 6px;border-bottom:1px solid #f0f0f0;text-align:right">₹${Number(item.gst_amount).toFixed(2)}</td>
+      </tr>`).join('')
+
+    const html = `
+      <html><head><title>GST Invoice — ${invoiceNum}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:30px;max-width:600px;margin:auto;color:#222}
+        h1{font-size:22px;margin:0}h2{font-size:13px;color:#666;font-weight:normal;margin:4px 0 0}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f5f5f5;padding:8px 6px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+        .text-right{text-align:right}.divider{border:none;border-top:1px solid #eee;margin:14px 0}
+        .total-row td{padding:6px 6px;font-size:13px}.grand-total td{font-weight:bold;font-size:15px;padding-top:10px}
+        .label{color:#666;font-size:11px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+        .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:#dcfce7;color:#16a34a}
+        @media print{body{padding:0}}
+      </style></head>
+      <body>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px">
+          <div>
+            <h1>✂️ KaratOS Salon</h1>
+            <h2>GST Tax Invoice</h2>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:monospace;font-weight:bold;font-size:14px">${invoiceNum}</div>
+            <div style="font-size:12px;color:#666;margin-top:3px">${dateStr}</div>
+            <div class="badge" style="margin-top:6px">Paid</div>
+          </div>
+        </div>
+        <hr class="divider">
+        <div style="display:flex;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div class="label">Billed To</div>
+            <div style="font-weight:600;font-size:14px">${selectedCustomer?.name || ''}</div>
+            <div style="color:#666;font-size:13px">${selectedCustomer?.phone || ''}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="label">Payment Method</div>
+            <div style="font-weight:600;font-size:14px;text-transform:capitalize">${paymentMethod}</div>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="text-right">Amount</th>
+              <th class="text-right">GST Rate</th>
+              <th class="text-right">GST Amt</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <hr class="divider">
+        <table>
+          <tr class="total-row"><td style="color:#666">Subtotal</td><td class="text-right">₹${subtotal.toLocaleString('en-IN')}</td></tr>
+          <tr class="total-row"><td style="color:#666">GST (${GST_RATE}%)</td><td class="text-right">₹${gstAmount.toLocaleString('en-IN')}</td></tr>
+          ${discount > 0 ? `<tr class="total-row"><td style="color:#16a34a">Discount</td><td class="text-right" style="color:#16a34a">−₹${discount.toLocaleString('en-IN')}</td></tr>` : ''}
+          <tr class="grand-total"><td>Total</td><td class="text-right">₹${total.toLocaleString('en-IN')}</td></tr>
+        </table>
+        <hr class="divider" style="margin-top:24px">
+        <p style="text-align:center;color:#999;font-size:12px">Thank you for visiting KaratOS Salon! ✂️</p>
+      </body></html>`
+
+    const w = window.open('', '_blank')
+    w.document.write(html)
+    w.document.close()
+    w.print()
   }
 
   const filteredServices = allServices.filter(s =>
     !serviceSearch || s.name.toLowerCase().includes(serviceSearch.toLowerCase())
   )
+
+  const resetForm = () => {
+    setStep(0); setSelectedCustomer(null); setCustomerSearch(''); setCustomerResults([])
+    setCustomItems([]); setSelectedServices([]); setCustomItemDesc(''); setCustomItemAmount('')
+    setDiscountAmount(0); setNotes(''); setInvoice(null); setPaymentMethod('cash')
+    setShowCatalog(false)
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
@@ -250,64 +346,125 @@ export default function WalkinBillingPage() {
         </div>
       )}
 
-      {/* Step 1 — Services */}
+      {/* Step 1 — Items */}
       {step === 1 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-          <h2 className="font-semibold text-gray-800 text-lg">Select Services</h2>
+          <h2 className="font-semibold text-gray-800 text-lg">Add Services / Items</h2>
 
-          <input
-            type="text"
-            value={serviceSearch}
-            onChange={e => setServiceSearch(e.target.value)}
-            placeholder="Search services..."
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-          />
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto pr-1">
-            {filteredServices.map(svc => {
-              const sel = selectedServices.find(s => s.id === svc.id)
-              return (
-                <button
-                  key={svc.id}
-                  onClick={() => toggleService(svc)}
-                  className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${
-                    sel ? 'border-accent bg-accent/5 text-accent' : 'border-gray-200 hover:border-gray-300 text-gray-700'
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{svc.name}</p>
-                    <p className="text-xs text-gray-400">{svc.duration_min} min</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-semibold">₹{Number(svc.price).toLocaleString('en-IN')}</p>
-                    {sel && <span className="text-xs text-accent">✓ Added</span>}
-                  </div>
-                </button>
-              )
-            })}
+          {/* Free-text item entry */}
+          <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+            <p className="text-xs font-semibold text-gray-500 uppercase">Add Item</p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customItemDesc}
+                onChange={e => setCustomItemDesc(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCustomItem()}
+                placeholder="Service / item name (e.g. Haircut)"
+                className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+              <input
+                type="number"
+                value={customItemAmount}
+                onChange={e => setCustomItemAmount(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCustomItem()}
+                placeholder="₹ Amount"
+                min="1"
+                className="w-28 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+              <button
+                onClick={addCustomItem}
+                className="bg-accent text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent-dark whitespace-nowrap"
+              >
+                + Add
+              </button>
+            </div>
           </div>
 
-          {selectedServices.length > 0 && (
-            <div className="border-t border-gray-100 pt-3 space-y-1">
-              <p className="text-xs font-semibold text-gray-500 uppercase mb-2">Selected</p>
-              {selectedServices.map(s => (
-                <div key={s.id} className="flex items-center justify-between text-sm">
-                  <span className="text-gray-700">{s.name}</span>
-                  <span className="font-medium text-gray-800">₹{Number(s.price).toLocaleString('en-IN')}</span>
+          {/* Items list */}
+          {allItems.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-gray-500 uppercase">Bill Items</p>
+              {customItems.map(item => (
+                <div key={item.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-accent/20 bg-accent/5">
+                  <span className="text-sm font-medium text-gray-800">{item.description}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-gray-800">₹{Number(item.amount).toLocaleString('en-IN')}</span>
+                    <button onClick={() => removeCustomItem(item.id)}
+                      className="text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
+                  </div>
                 </div>
               ))}
-              <div className="flex justify-between font-semibold text-gray-800 pt-1 border-t border-gray-100">
+              {selectedServices.map(s => (
+                <div key={s.id} className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-blue-100 bg-blue-50/50">
+                  <div>
+                    <span className="text-sm font-medium text-gray-800">{s.name}</span>
+                    <span className="ml-2 text-xs text-gray-400">from catalog</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-gray-800">₹{Number(s.price).toLocaleString('en-IN')}</span>
+                    <button onClick={() => toggleService(s)}
+                      className="text-gray-400 hover:text-red-500 text-lg leading-none">×</button>
+                  </div>
+                </div>
+              ))}
+              <div className="flex justify-between font-semibold text-gray-800 px-3 pt-1 border-t border-gray-100">
                 <span>Subtotal</span>
                 <span>₹{subtotal.toLocaleString('en-IN')}</span>
               </div>
             </div>
           )}
 
+          {/* Optional: Service catalog */}
+          <div className="border border-gray-100 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setShowCatalog(v => !v)}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-600 hover:bg-gray-50"
+            >
+              <span className="font-medium">Browse service catalog (optional)</span>
+              <span>{showCatalog ? '▲' : '▼'}</span>
+            </button>
+            {showCatalog && (
+              <div className="p-4 border-t border-gray-100 space-y-3">
+                <input
+                  type="text"
+                  value={serviceSearch}
+                  onChange={e => setServiceSearch(e.target.value)}
+                  placeholder="Search services..."
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto pr-1">
+                  {filteredServices.map(svc => {
+                    const sel = selectedServices.find(s => s.id === svc.id)
+                    return (
+                      <button
+                        key={svc.id}
+                        onClick={() => toggleService(svc)}
+                        className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-left transition-all ${
+                          sel ? 'border-accent bg-accent/5 text-accent' : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-sm font-medium">{svc.name}</p>
+                          <p className="text-xs text-gray-400">{svc.duration_min} min</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold">₹{Number(svc.price).toLocaleString('en-IN')}</p>
+                          {sel && <span className="text-xs text-accent">✓ Added</span>}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-between pt-2">
             <button onClick={() => setStep(0)} className="text-sm text-gray-500 hover:text-gray-700">← Back</button>
             <button
               onClick={() => setStep(2)}
-              disabled={selectedServices.length === 0}
+              disabled={allItems.length === 0}
               className="bg-accent text-white px-6 py-2 rounded-lg text-sm font-medium hover:bg-accent-dark disabled:opacity-40"
             >
               Next →
@@ -323,10 +480,10 @@ export default function WalkinBillingPage() {
 
           {/* Bill summary */}
           <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
-            {selectedServices.map(s => (
-              <div key={s.id} className="flex justify-between text-gray-700">
-                <span>{s.name}</span>
-                <span>₹{Number(s.price).toLocaleString('en-IN')}</span>
+            {allItems.map(i => (
+              <div key={i.key} className="flex justify-between text-gray-700">
+                <span>{i.name}</span>
+                <span>₹{Number(i.price).toLocaleString('en-IN')}</span>
               </div>
             ))}
             <div className="border-t border-gray-200 pt-2 flex justify-between text-gray-600">
@@ -403,10 +560,10 @@ export default function WalkinBillingPage() {
           <div className="text-center">
             <div className="text-4xl mb-2">✅</div>
             <h2 className="font-bold text-gray-800 text-xl">Invoice Created!</h2>
-            <p className="text-sm text-gray-500 mt-1">Invoice #{invoice.id}</p>
+            <p className="text-sm text-gray-500 mt-1">{invoice.invoice_number}</p>
           </div>
 
-          {/* Printable receipt */}
+          {/* Receipt summary */}
           <div ref={printRef} className="border border-gray-200 rounded-xl p-5 space-y-3">
             <div className="text-center border-b border-gray-200 pb-3">
               <p className="font-bold text-lg">KaratOS Salon</p>
@@ -422,6 +579,10 @@ export default function WalkinBillingPage() {
                 <span>{selectedCustomer?.phone}</span>
               </div>
               <div className="flex justify-between">
+                <span className="text-gray-500">Invoice #</span>
+                <span className="font-mono text-xs">{invoice.invoice_number}</span>
+              </div>
+              <div className="flex justify-between">
                 <span className="text-gray-500">Date</span>
                 <span>{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
               </div>
@@ -429,15 +590,15 @@ export default function WalkinBillingPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
-                  <th className="text-left py-1 text-gray-500 font-medium">Service</th>
+                  <th className="text-left py-1 text-gray-500 font-medium">Item</th>
                   <th className="text-right py-1 text-gray-500 font-medium">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {selectedServices.map(s => (
-                  <tr key={s.id}>
-                    <td className="py-1">{s.name}</td>
-                    <td className="py-1 text-right">₹{Number(s.price).toLocaleString('en-IN')}</td>
+                {(invoice.items || allItems).map((item, idx) => (
+                  <tr key={item.id || idx}>
+                    <td className="py-1">{item.service_name || item.name}</td>
+                    <td className="py-1 text-right">₹{Number(item.price).toLocaleString('en-IN')}</td>
                   </tr>
                 ))}
               </tbody>
@@ -460,25 +621,22 @@ export default function WalkinBillingPage() {
             </div>
           </div>
 
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={handlePrint}
-              className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+              onClick={handlePrintGSTInvoice}
+              className="col-span-2 bg-accent text-white py-2.5 rounded-xl text-sm font-medium hover:bg-accent-dark transition-colors"
             >
-              🖨️ Print
+              📄 Download GST Invoice
             </button>
             <button
               onClick={() => navigate(`/billing/${invoice.id}`)}
-              className="flex-1 border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50"
+              className="border border-gray-300 text-gray-700 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-50"
             >
               View Invoice →
             </button>
             <button
-              onClick={() => {
-                setStep(0); setSelectedCustomer(null); setCustomerSearch(''); setSelectedServices([])
-                setDiscountAmount(0); setNotes(''); setInvoice(null); setPaymentMethod('cash')
-              }}
-              className="flex-1 bg-accent text-white py-2.5 rounded-xl text-sm font-medium hover:bg-accent-dark"
+              onClick={resetForm}
+              className="bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-medium hover:bg-gray-200"
             >
               + New Bill
             </button>

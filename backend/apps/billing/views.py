@@ -214,19 +214,35 @@ class InvoiceViewSet(ViewSet):
                 subtotal = Decimal('0.00')
                 gst_total = Decimal('0.00')
                 line_items = []
+                default_gst_rate = Decimal(str(data.get('gst_rate', '5')))
 
                 for item_data in items_data:
-                    service = Service.objects.get(pk=item_data['service_id'])
-                    stylist_id = item_data.get('stylist_id')
-                    stylist = StaffMember.objects.get(pk=stylist_id) if stylist_id else None
-                    item_gst = (service.price * service.gst_rate / 100).quantize(Decimal('0.01'))
-                    subtotal += service.price
+                    service_id = item_data.get('service_id')
+                    if service_id:
+                        service = Service.objects.get(pk=service_id)
+                        stylist_id = item_data.get('stylist_id')
+                        stylist = StaffMember.objects.get(pk=stylist_id) if stylist_id else None
+                        item_price = service.price
+                        item_gst_rate = service.gst_rate
+                        item_description = ''
+                        service_obj = service
+                    else:
+                        # Free-text item — no service lookup needed
+                        item_price = Decimal(str(item_data.get('unit_price', 0)))
+                        item_gst_rate = Decimal(str(item_data.get('gst_rate', default_gst_rate)))
+                        item_description = item_data.get('description', '')
+                        stylist = None
+                        service_obj = None
+
+                    item_gst = (item_price * item_gst_rate / 100).quantize(Decimal('0.01'))
+                    subtotal += item_price
                     gst_total += item_gst
                     line_items.append({
-                        'service': service,
+                        'service': service_obj,
+                        'description': item_description,
                         'stylist': stylist,
-                        'price': service.price,
-                        'gst_rate': service.gst_rate,
+                        'price': item_price,
+                        'gst_rate': item_gst_rate,
                         'gst_amount': item_gst,
                     })
 
